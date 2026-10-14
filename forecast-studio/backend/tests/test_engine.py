@@ -53,7 +53,10 @@ def test_too_short():
     assert "error" in forecast_series([1, 2, 3], "2025-01-01", "month", 12)
 
 
-def test_api_batch():
+def test_api_batch(monkeypatch):
+    from app import main
+    # Exercise the production single-worker setting without Windows process spawning.
+    monkeypatch.setattr(main, 'POOL_WORKERS', 1)
     c = TestClient(app)
     body = {"freq": "month", "horizon": 12, "models": ['sr', 'ma'], "series": [
         {"id": "all", "values": monthly(), "start": "2022-01-01"},
