@@ -1,0 +1,27 @@
+services:
+  api:
+    build: ./backend
+    image: forecast-studio-api:1.0.0
+    restart: unless-stopped
+    environment:
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+      POOL_WORKERS: ${POOL_WORKERS:-2}
+      MAX_SERIES: ${MAX_SERIES:-50}
+      MAX_POINTS: ${MAX_POINTS:-1000}
+      CACHE_SIZE: ${CACHE_SIZE:-512}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    expose:
+      - "8000"
+
+  web:
+    build: ./frontend
+    image: forecast-studio-web:1.0.0
+    restart: unless-stopped
+    environment:
+      API_UPSTREAM: http://api:8000
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
