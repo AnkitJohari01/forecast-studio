@@ -1,0 +1,277 @@
+diff --git a/.github/workflows/check.yml b/.github/workflows/check.yml
+new file mode 100644
+index 0000000..f83fe9c
+--- /dev/null
++++ b/.github/workflows/check.yml
+@@ -0,0 +1,42 @@
++name: Check app
++
++on: [push, pull_request]
++
++permissions:
++  contents: read
++
++jobs:
++  frontend:
++    runs-on: ubuntu-latest
++    defaults:
++      run:
++        working-directory: forecast-studio/frontend
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-node@v4
++        with:
++          node-version: '24'
++          cache: npm
++          cache-dependency-path: forecast-studio/frontend/package-lock.json
++      - run: npm ci
++      - run: npm run build
++
++  backend:
++    runs-on: ubuntu-latest
++    env:
++      POOL_WORKERS: '1'
++      OPENBLAS_NUM_THREADS: '1'
++      OMP_NUM_THREADS: '1'
++      MKL_NUM_THREADS: '1'
++    defaults:
++      run:
++        working-directory: forecast-studio/backend
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-python@v5
++        with:
++          python-version: '3.12'
++          cache: pip
++          cache-dependency-path: forecast-studio/backend/requirements*.txt
++      - run: python -m pip install -r requirements-dev.txt
++      - run: python -m pytest -q
+diff --git a/DEPLOYMENT.md b/DEPLOYMENT.md
+new file mode 100644
+index 0000000..8636b20
+--- /dev/null
++++ b/DEPLOYMENT.md
+@@ -0,0 +1,87 @@
++# Forecast Studio: Render + Vercel
++
++Repository: https://github.com/AnkitJohari01/forecast-studio
++
++The browser loads the React app from Vercel and calls the Python API directly on Render over HTTPS. No database is needed. CSV parsing stays in the browser; aggregated series go to the API. The API's cache is temporary.
++
++## 1. Push the deployment files
++
++Keep the existing nested folder structure:
++
++```text
++render.yaml
++DEPLOYMENT.md
++forecast-studio/
++  backend/Dockerfile
++  frontend/vercel.json
++  frontend/.env.example
++```
++
++`render.yaml` belongs at the GitHub repository root, outside the inner `forecast-studio` folder. Vercel's root directory is `forecast-studio/frontend`.
++
++## 2. Deploy the API on Render
++
++Open [Render](https://dashboard.render.com), select **New > Blueprint**, connect the repository, select `main`, and use the root `render.yaml`.
++
++The Blueprint selects the **Free** plan, Docker, root directory `forecast-studio/backend`, and health check `/api/health`. It uses one web worker, one model worker, single-threaded numerical libraries, and a small result cache to reduce memory use. The Dockerfile binds to Render's `PORT` on `0.0.0.0`.
++
++When prompted for `ALLOWED_ORIGINS`, enter the exact Vercel production origin, for example `https://your-project.vercel.app`, with no trailing slash. If Vercel has not assigned your URL yet, use `http://localhost:5173` temporarily and replace it after step 3. Do not use `*` or assume a project URL is available.
++
++After the service is live, copy its actual `https://...onrender.com` URL. Open `<RENDER_URL>/api/health`; it must return `{"status":"ok"}`. API documentation is at `<RENDER_URL>/api/docs`. The API root `/` is not a dashboard.
++
++If configuring a Web Service manually, choose Docker, root `forecast-studio/backend`, Dockerfile `./Dockerfile`, Docker context `.`, Free instance, and health check `/api/health`. Copy the environment values from `render.yaml`; leave the Docker command override empty.
++
++## 3. Deploy the frontend on Vercel
++
++Open [Vercel](https://vercel.com/new), import the same repository, and set:
++
++| Setting | Value |
++|---|---|
++| Root Directory | `forecast-studio/frontend` |
++| Framework | Vite |
++| Install Command | `npm ci` |
++| Build Command | `npm run build` |
++| Output Directory | `dist` |
++| Environment variable | `VITE_API_BASE=https://YOUR-ACTUAL-RENDER-SERVICE.onrender.com` |
++
++Set `VITE_API_BASE` for Production. Include Preview too if previews should call the same API. The value is only the HTTPS origin: **do not append `/api`**, because the app already appends `/api/forecast`. This is a public URL, not a secret. Vercel reads the included `vercel.json` from the selected root directory.
++
++Deploy, then copy the actual production URL. In Render, set `ALLOWED_ORIGINS` to that exact origin and save/redeploy. For a custom domain or a specific preview, add its exact origin separated by commas. Do not allow every `vercel.app` site. CORS controls browser access; it is not authentication.
++
++Changing `VITE_API_BASE` requires a new Vercel deployment because Vite embeds it at build time. Changing `ALLOWED_ORIGINS` requires a Render restart/redeploy.
++
++## 4. Verify the connected deployment
++
++1. Open the Render health endpoint and confirm `{"status":"ok"}`.
++2. Open the Vercel production URL. The sample-data dashboard should finish forecasting and show charts, model scores, and segment forecasts.
++3. In Model lab, confirm all eight models are listed for the sample monthly data.
++4. Select a region and change the forecast horizon. Confirm the values update.
++5. Upload a small CSV with at least six periods and confirm it forecasts. Reload the page; uploads are not saved.
++
++Optional API check (replace the URL):
++
++```bash
++curl https://YOUR-ACTUAL-RENDER-SERVICE.onrender.com/api/forecast \
++  -H 'Content-Type: application/json' \
++  -d '{"freq":"month","horizon":3,"models":["sr"],"series":[{"id":"check","start":"2025-01-01","values":[100,110,105,120,125,130,128,140,145,150,148,160]}]}'
++```
++
++Expect HTTP 200 and `results.check.models` with three forecast values.
++
++## Free demo limits and troubleshooting
++
++- Render Free sleeps after 15 minutes without traffic; waking normally takes about a minute. Open the health endpoint, wait for it to become healthy, then use the dashboard's **Try again** button if necessary. There is no keep-alive job.
++- The free service has 512 MB RAM and limited CPU. All forecasting models remain enabled. Single-worker settings reduce memory use but do not guarantee that large uploads, weekly histories, many segments, or concurrent users will fit. Out-of-memory restarts or slow batches require a smaller demo workload or an explicitly chosen paid instance with more memory.
++- A page that loads but reports a forecasting error usually indicates an incorrect `VITE_API_BASE`, a sleeping/unhealthy Render service, or an `ALLOWED_ORIGINS` mismatch. Check Render logs and the browser Network panel.
++- A response containing HTML instead of forecast JSON usually means `VITE_API_BASE` was empty and the request went to Vercel's SPA fallback. Set the Render origin and redeploy Vercel.
++- This app has no login. Use sample/non-sensitive data for the public demo. CORS does not restrict direct API callers, and no authentication or rate-limiting service has been added.
++
++## Local checks
++
++Backend: Python 3.12, `pip install -r requirements-dev.txt`, then `POOL_WORKERS=1 pytest -q` from `forecast-studio/backend`. Frontend: `npm ci && npm run build` from `forecast-studio/frontend`.
++
++The included GitHub Actions workflow runs the frontend build and the complete backend test suite on Linux on each push and pull request. Check its result before relying on the demo. The scikit-learn dependency is explicitly included because the app uses XGBoost's `XGBRegressor` interface.
++
++Existing Docker Compose and local Vite development retain port 8000 and the same-origin `/api` proxy.
++
++References: [Render monorepo roots](https://render.com/docs/monorepo-support), [Blueprint format](https://render.com/docs/blueprint-spec), [Render port binding](https://render.com/docs/web-services#port-binding), [Render Free limits](https://render.com/docs/free), [Vite on Vercel](https://vercel.com/docs/frameworks/frontend/vite).
+diff --git a/forecast-studio/.gitignore b/forecast-studio/.gitignore
+index 8a3a32f..8f024d7 100644
+--- a/forecast-studio/.gitignore
++++ b/forecast-studio/.gitignore
+@@ -4,4 +4,8 @@ __pycache__/
+ *.pyc
+ .pytest_cache/
+ .env
++.env.*
++!.env.example
++.vercel/
++*.tsbuildinfo
+ .venv/
+diff --git a/forecast-studio/README.md b/forecast-studio/README.md
+index 6aa2641..be10f56 100644
+--- a/forecast-studio/README.md
++++ b/forecast-studio/README.md
+@@ -37,6 +37,10 @@ Update after code changes: `docker compose up -d --build`. Stop: `docker compose
+ 
+ ## 2. Deploy to the cloud
+ 
++### Render API + Vercel frontend
++
++See [the deployment guide](../DEPLOYMENT.md) for this repository's exact folder paths, environment variables, and verification steps. The repository-root `render.yaml` configures the API; `frontend/vercel.json` configures the frontend.
++
+ Both images are standard Linux containers, so any container platform works. The **web** container must reach the **api** container. Set `API_UPSTREAM` on the web container to the API's internal URL.
+ 
+ ### Azure Container Apps
+diff --git a/forecast-studio/backend/Dockerfile b/forecast-studio/backend/Dockerfile
+index a2d1949..1be0881 100644
+--- a/forecast-studio/backend/Dockerfile
++++ b/forecast-studio/backend/Dockerfile
+@@ -20,12 +20,12 @@ COPY app ./app
+ RUN useradd --create-home --uid 10001 appuser
+ USER appuser
+ 
+-# Warm imports at build time so the first request is fast.
+-RUN python -c "import statsmodels.api, xgboost, prophet; print('models ready')"
++# Verify model dependencies during the image build.
++RUN python -c "import statsmodels.api, xgboost, sklearn, prophet; print('models ready')"
+ 
+-ENV WEB_CONCURRENCY=2 POOL_WORKERS=2
++ENV WEB_CONCURRENCY=2 POOL_WORKERS=2 PORT=8000
+ EXPOSE 8000
+ HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+-  CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4).status==200 else 1)"
++  CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('PORT', '8000') + '/api/health', timeout=4)"
+ 
+-CMD ["sh", "-c", "gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w ${WEB_CONCURRENCY} -b 0.0.0.0:8000 --timeout 180 --graceful-timeout 30 --access-logfile -"]
++CMD ["sh", "-c", "exec gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w ${WEB_CONCURRENCY} -b 0.0.0.0:${PORT:-8000} --timeout 180 --graceful-timeout 30 --access-logfile -"]
+diff --git a/forecast-studio/backend/requirements.txt b/forecast-studio/backend/requirements.txt
+index aac0cdc..f4be7dc 100644
+--- a/forecast-studio/backend/requirements.txt
++++ b/forecast-studio/backend/requirements.txt
+@@ -7,5 +7,6 @@ pandas==3.0.2
+ scipy==1.17.1
+ statsmodels==0.15.0
+ xgboost==3.4.1
++scikit-learn==1.9.1
+ prophet==1.5.0
+ cmdstanpy==1.3.0
+diff --git a/forecast-studio/backend/tests/test_engine.py b/forecast-studio/backend/tests/test_engine.py
+index 70789c0..5c91b11 100644
+--- a/forecast-studio/backend/tests/test_engine.py
++++ b/forecast-studio/backend/tests/test_engine.py
+@@ -27,6 +27,14 @@ def test_short_series_degrades_gracefully():
+     assert any("na" not in m for m in r["models"])
+ 
+ 
++def test_xgboost_dependencies_support_forecasting():
++    r = forecast_series(monthly(), "2022-01-01", "month", 12, ["xgb"])
++    assert "error" not in r, r
++    assert r["best"] == "xgb"
++    assert len(r["models"][0]["forecast"]) == 12
++    assert np.isfinite(r["models"][0]["forecast"]).all()
++
++
+ def test_too_short():
+     assert "error" in forecast_series([1, 2, 3], "2025-01-01", "month", 12)
+ 
+diff --git a/forecast-studio/frontend/.env.example b/forecast-studio/frontend/.env.example
+new file mode 100644
+index 0000000..86bc7c0
+--- /dev/null
++++ b/forecast-studio/frontend/.env.example
+@@ -0,0 +1,5 @@
++# Local development: leave empty to use Vite's /api proxy.
++# Vercel: set to the Render service's HTTPS origin, without /api or a trailing slash.
++# Example: VITE_API_BASE=https://your-api-service.onrender.com
++# This value is public and is embedded in the frontend at build time.
++VITE_API_BASE=
+diff --git a/forecast-studio/frontend/vercel.json b/forecast-studio/frontend/vercel.json
+new file mode 100644
+index 0000000..0ee68ac
+--- /dev/null
++++ b/forecast-studio/frontend/vercel.json
+@@ -0,0 +1,8 @@
++{
++  "$schema": "https://openapi.vercel.sh/vercel.json",
++  "framework": "vite",
++  "installCommand": "npm ci",
++  "buildCommand": "npm run build",
++  "outputDirectory": "dist",
++  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
++}
+diff --git a/render.yaml b/render.yaml
+new file mode 100644
+index 0000000..f3f181a
+--- /dev/null
++++ b/render.yaml
+@@ -0,0 +1,25 @@
++services:
++  - type: web
++    name: forecast-studio-api
++    runtime: docker
++    # shortcut: free demo resources; upgrade if forecasts exceed memory or latency limits.
++    plan: free
++    rootDir: forecast-studio/backend
++    dockerfilePath: ./Dockerfile
++    dockerContext: .
++    healthCheckPath: /api/health
++    envVars:
++      - key: WEB_CONCURRENCY
++        value: "1"
++      - key: POOL_WORKERS
++        value: "1"
++      - key: CACHE_SIZE
++        value: "32"
++      - key: OMP_NUM_THREADS
++        value: "1"
++      - key: OPENBLAS_NUM_THREADS
++        value: "1"
++      - key: MKL_NUM_THREADS
++        value: "1"
++      - key: ALLOWED_ORIGINS
++        sync: false
