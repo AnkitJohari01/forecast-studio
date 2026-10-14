@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './lib/charts';
 import { buildSeries, defaultsFor, dimValues, getDates, makeDataset, makeSample, maxH, seasonLen, unitWord } from './lib/data';
-import { clamp, effectiveCurrency, makeFmt, sum, type Currency } from './lib/format';
+import { accOf, clamp, effectiveCurrency, makeFmt, sum, type Currency } from './lib/format';
 import { computeScenario, PRESETS, presetScenario } from './lib/scenario';
 import { isLive, type Cfg, type Dataset, type Gran, type Scenario, type View } from './lib/types';
 import { useForecast } from './lib/useForecast';
@@ -13,11 +13,6 @@ import { Segments, type SegRow } from './components/Segments';
 import { Sidebar } from './components/Sidebar';
 import { Toolbar } from './components/Toolbar';
 import { WhatIf } from './components/WhatIf';
-
-const MODEL_LIST = [
-  { key: 'ens', name: 'Ensemble' }, { key: 'arima', name: 'ARIMA' }, { key: 'xgb', name: 'XGBoost' }, { key: 'prophet', name: 'Prophet' },
-  { key: 'hw', name: 'Holt-Winters' }, { key: 'theta', name: 'Theta' }, { key: 'sr', name: 'Trend + seasonality' }, { key: 'sn', name: 'Seasonal naive' },
-];
 
 interface Settings { cfg: Cfg; filter: string; gran: Gran; horizon: number }
 type Source = 'sample' | 'upload';
@@ -68,13 +63,14 @@ export default function App() {
   const series = useMemo(() => (ds ? buildSeries(ds, cfg, gran, filt) : null), [ds, cfg, gran, filt]);
   const dims = useMemo(() => (ds ? dimValues(ds, cfg) : []), [ds, cfg]);
   const mainList = useMemo(() => (series ? [{ id: 'main', s: series }] : []), [series]);
-  const main = useForecast(mainList, gran, maxH(gran));
+  const main = useForecast(mainList, gran, H);
   const segList = useMemo(() => (ds && cfg.dim ? dims.slice(0, 12).map((v) => ({ id: v, s: buildSeries(ds, cfg, gran, v) })) : []), [ds, cfg, gran, dims]);
-  const seg = useForecast(segList, gran, maxH(gran), !main.loading && !!main.data);
+  const seg = useForecast(segList, gran, H, !main.loading && !!main.data);
 
   const curr = effectiveCurrency(cfg.value, currency);
   const fmt = useMemo(() => makeFmt(curr), [curr]);
   const result = main.data?.main;
+  const models = result?.models || [];
 
   const view: View | null = useMemo(() => {
     if (!series || !result || result.error) return null;
@@ -105,7 +101,7 @@ export default function App() {
       for (let k = 0; k < H; k++) { const p = pa(k); if (p == null) { prior = null; break; } prior += p; }
       const total = sum(fc);
       return { v: id, i, total, recent: sum(s.y.slice(-Math.min(M, s.y.length))), growth: prior ? total / prior - 1 : null,
-        acc: Math.max(0, 100 - b.wape * 100), model: b.name, hist: s.y.slice(-24), fc: fc.slice(0, 12) };
+        acc: accOf(b), model: b.name, hist: s.y.slice(-24), fc: fc.slice(0, 12) };
     });
   }, [seg.data, segList, H, M]);
 
@@ -132,7 +128,7 @@ export default function App() {
   const setFilter = (f: string) => setSt((s) => ({ ...s, filter: f }));
   const focusOverview = () => document.getElementById('overview')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   const applyPreset = (k: string) => setScn(presetScenario(k));
-  const modelName = (k: string) => MODEL_LIST.find((m) => m.key === k)?.name || 'model';
+  const modelName = (k: string) => models.find((m) => m.key === k)?.name || 'model';
 
   const title = `${cfg.value || 'Sales'} forecast${filt ? `: ${filt}` : ''}`;
   const busy = main.loading && !view;
@@ -154,7 +150,7 @@ export default function App() {
         {ds && (
           <Toolbar ds={ds} cfg={cfg} setCfg={setCfg} dims={dims} filter={filter} setFilter={setFilter}
             gran={gran} setGran={(g) => setSt((s) => ({ ...s, gran: g, horizon: g === 'week' ? 13 : 12 }))} weekOk={!!info?.dayLevel}
-            model={model} setModel={setModel} models={MODEL_LIST} conf={conf} setConf={setConf} currency={currency} setCurrency={setCurrency} />
+            model={model} setModel={setModel} models={models} conf={conf} setConf={setConf} currency={currency} setCurrency={setCurrency} />
         )}
 
         {!ds && (
@@ -183,7 +179,7 @@ export default function App() {
                 <WhatIf v={view} gran={gran} fmt={fmt} scn={scn} setScn={setScn} applyPreset={applyPreset} theme={themeKey} />
                 <ModelLab v={view} gran={gran} fmt={fmt}
                   onPick={(k) => { setModel(k); toast(`Using ${modelName(k)}`); focusOverview(); }}
-                  onAuto={() => { setModel('auto'); toast('Using the most accurate model'); }} />
+                  onAuto={() => { setModel('auto'); toast('Using the auto-selected model'); }} />
                 <div className="grid2" id="insightsSec">
                   <Insights v={view} gran={gran} fmt={fmt} measure={cfg.value} dim={cfg.dim} seg={segSummary} scn={scn} />
                   <SeasonChart v={view} gran={gran} theme={themeKey} />
@@ -194,7 +190,7 @@ export default function App() {
                     loading={seg.loading} error={seg.error} retry={seg.retry} />
                 )}
                 <ForecastTable v={view} gran={gran} fmt={fmt} measure={cfg.value} conf={conf} priorAt={priorAtFn(view.s.y, view.fc, M)} toast={toast} />
-                <p className="foot">Models run on the server with statsmodels (SARIMAX, Holt-Winters, Theta), XGBoost and Prophet, plus a trend + seasonality regression, a seasonal naive baseline and an ensemble of the top three. Every model is backtested on the most recent periods; accuracy is 100% minus the weighted absolute percentage error. Ranges are approximate prediction intervals based on historical error.</p>
+                <p className="foot">Models come from the shared server registry. Auto selection uses earlier validation data, with a fixed baseline for short histories; the final backtest is held out from selection. Accuracy is max(0, 100% minus WAPE). MAPE excludes zero and near-zero actuals; unavailable metrics show a dash. Ranges are estimated from historical error and do not guarantee coverage.</p>
               </>
             )}
           </div>

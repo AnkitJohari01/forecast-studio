@@ -4,6 +4,8 @@ import react from '@vitejs/plugin-react';
 // In development, /api is proxied to the FastAPI backend on port 8000.
 export default defineConfig({
   plugins: [react()],
+  // Windows sandboxed checkouts can reject native realpath calls.
+  resolve: { preserveSymlinks: true },
   server: { port: 5173, proxy: { '/api': 'http://localhost:8000' } },
   build: { sourcemap: false, chunkSizeWarningLimit: 900 },
 });

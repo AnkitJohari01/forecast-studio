@@ -35,7 +35,7 @@ const MONTHS: Record<string, number> = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4,
 function mk(y: number, mo: number, d: number): Date | null {
   if (mo < 0 || mo > 11 || d < 1 || d > 31 || y < 1900 || y > 2200) return null;
   const dt = new Date(Date.UTC(y, mo, d));
-  return isNaN(+dt) ? null : dt;
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo && dt.getUTCDate() === d ? dt : null;
 }
 export function parseDate(v: unknown, dayFirst: boolean): Date | null {
   if (v == null) return null;
@@ -44,29 +44,35 @@ export function parseDate(v: unknown, dayFirst: boolean): Date | null {
   if (!s) return null;
   let m: RegExpMatchArray | null;
   if (/^\d{5}(\.\d+)?$/.test(s)) { const n = +s; return n > 20000 && n < 80000 ? new Date(Date.UTC(1899, 11, 30) + Math.floor(n) * 864e5) : null; }
-  if ((m = s.match(/^(\d{4})[-/.](\d{1,2})(?:[-/.](\d{1,2}))?/))) return mk(+m[1], +m[2] - 1, m[3] ? +m[3] : 1);
-  if ((m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/))) {
+  if ((m = s.match(/^(\d{4})[-/.](\d{1,2})(?:[-/.](\d{1,2}))?(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/))) return mk(+m[1], +m[2] - 1, m[3] ? +m[3] : 1);
+  if ((m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/))) {
     const a = +m[1], b = +m[2]; let y = +m[3]; if (y < 100) y += 2000;
     let d: number, mo: number;
     if (a > 12) { d = a; mo = b; } else if (b > 12) { d = b; mo = a; } else if (dayFirst) { d = a; mo = b; } else { d = b; mo = a; }
     return mk(y, mo - 1, d);
   }
   if ((m = s.match(/^([A-Za-z]{3,9})[\s\-/.,']*(\d{2,4})$/))) { const mo = MONTHS[m[1].slice(0, 3).toLowerCase()]; if (mo != null) { let y = +m[2]; if (y < 100) y += 2000; return mk(y, mo, 1); } }
-  if ((m = s.match(/^(\d{1,2})[\s\-/.]([A-Za-z]{3,9})[\s\-/.,']*(\d{2,4})/))) { const mo = MONTHS[m[2].slice(0, 3).toLowerCase()]; if (mo != null) { let y = +m[3]; if (y < 100) y += 2000; return mk(y, mo, +m[1]); } }
-  if (/^\d+$/.test(s)) return null;
-  const t = Date.parse(s);
-  if (isNaN(t)) return null;
-  const d = new Date(t);
-  return mk(d.getFullYear(), d.getMonth(), d.getDate());
+  if ((m = s.match(/^(\d{1,2})[\s\-/.]([A-Za-z]{3,9})[\s\-/.,']*(\d{2,4})$/))) { const mo = MONTHS[m[2].slice(0, 3).toLowerCase()]; if (mo != null) { let y = +m[3]; if (y < 100) y += 2000; return mk(y, mo, +m[1]); } }
+  if ((m = s.match(/^([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})$/))) { const mo = MONTHS[m[1].slice(0, 3).toLowerCase()]; if (mo != null) return mk(+m[3], mo, +m[2]); }
+  return null;
 }
 export function parseNumber(v: unknown): number {
-  if (typeof v === 'number') return v;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;
   if (v == null) return NaN;
   const s = String(v).trim().replace(/[₹$€£,\s]/g, '').replace(/^\((.*)\)$/, '-$1');
-  return s === '' ? NaN : Number(s);
+  const n = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(s) ? Number(s) : NaN;
+  return Number.isFinite(n) ? n : NaN;
 }
 
 /* ------------------------------------------------------------------ datasets */
+function dayFirstFor(rows: Row[], col: string): boolean {
+  for (const r of rows) {
+    const m = String(r[col] ?? '').trim().match(/^(\d{1,2})[-/.](\d{1,2})[-/.]\d{2,4}/);
+    if (m) { if (+m[1] > 12) return true; if (+m[2] > 12) return false; }
+  }
+  return true;
+}
+
 let seq = 0;
 export function makeDataset(name: string, rows: Row[], kind: Dataset['kind']): Dataset {
   const columns = Object.keys(rows[0] || {}).filter((c) => c && c.trim());
@@ -76,7 +82,8 @@ export function makeDataset(name: string, rows: Row[], kind: Dataset['kind']): D
     const vs = vals(c); if (!vs.length) return false;
     const named = /date|month|period|week|day|time/i.test(c);
     if (vs.every((v) => /^-?\d+(\.\d+)?$/.test(String(v).trim())) && !named) return false;
-    return vs.filter((v) => parseDate(v, true)).length / vs.length > 0.8;
+    const dayFirst = dayFirstFor(rows, c);
+    return vs.filter((v) => parseDate(v, dayFirst)).length / vs.length > 0.8;
   }).sort((a, b) => (/date/i.test(b) ? 1 : 0) - (/date/i.test(a) ? 1 : 0));
   const numCols = columns.filter((c) => {
     if (dateCols.includes(c)) return false;
@@ -93,11 +100,7 @@ export function makeDataset(name: string, rows: Row[], kind: Dataset['kind']): D
 
 export function getDates(ds: Dataset, col: string): DateInfo {
   if (ds.dateCache[col]) return ds.dateCache[col];
-  let dayFirst = true;
-  for (const r of ds.rows) {
-    const m = String(r[col] ?? '').trim().match(/^(\d{1,2})[-/.](\d{1,2})[-/.]\d{2,4}/);
-    if (m) { if (+m[1] > 12) { dayFirst = true; break; } if (+m[2] > 12) { dayFirst = false; break; } }
-  }
+  const dayFirst = dayFirstFor(ds.rows, col);
   const dates = ds.rows.map((r) => parseDate(r[col], dayFirst));
   let min = Infinity, max = -Infinity, valid = 0;
   const days = new Set<number>();

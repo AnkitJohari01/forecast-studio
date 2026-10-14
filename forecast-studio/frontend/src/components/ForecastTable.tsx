@@ -31,7 +31,7 @@ export function ForecastTable({ v, gran, fmt, measure, conf, priorAt, toast }: {
   return (
     <section className="card" id="detail">
       <div className="sec-h" style={{ margin: 0 }}>
-        <div><h3>Forecast table</h3><p className="sub">{v.sel.name}, {v.H} {unitWord(gran, v.H)} of {measure.toLowerCase()}{v.filter ? ' for ' + v.filter : ''}, {conf}% likely range</p></div>
+        <div><h3>Forecast table</h3><p className="sub">{v.sel.name}, {v.H} {unitWord(gran, v.H)} of {measure.toLowerCase()}{v.filter ? ' for ' + v.filter : ''}, {conf}% estimated range</p></div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button type="button" className="btn" onClick={copy}><Icon name="copy" />Copy table</button>
           <button type="button" className="btn" onClick={download}><Icon name="table" />Download CSV</button>
