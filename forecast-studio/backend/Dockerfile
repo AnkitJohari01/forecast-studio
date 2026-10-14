@@ -20,12 +20,12 @@ COPY app ./app
 RUN useradd --create-home --uid 10001 appuser
 USER appuser
 
-# Warm imports at build time so the first request is fast.
-RUN python -c "import statsmodels.api, xgboost, prophet; print('models ready')"
+# Verify model dependencies during the image build.
+RUN python -c "import statsmodels.api, xgboost, sklearn, prophet; print('models ready')"
 
-ENV WEB_CONCURRENCY=2 POOL_WORKERS=2
+ENV WEB_CONCURRENCY=2 POOL_WORKERS=2 PORT=8000
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-  CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4).status==200 else 1)"
+  CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('PORT', '8000') + '/api/health', timeout=4)"
 
-CMD ["sh", "-c", "gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w ${WEB_CONCURRENCY} -b 0.0.0.0:8000 --timeout 180 --graceful-timeout 30 --access-logfile -"]
+CMD ["sh", "-c", "exec gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w ${WEB_CONCURRENCY} -b 0.0.0.0:${PORT:-8000} --timeout 180 --graceful-timeout 30 --access-logfile -"]

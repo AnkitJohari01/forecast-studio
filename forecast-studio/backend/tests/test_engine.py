@@ -27,6 +27,14 @@ def test_short_series_degrades_gracefully():
     assert any("na" not in m for m in r["models"])
 
 
+def test_xgboost_dependencies_support_forecasting():
+    r = forecast_series(monthly(), "2022-01-01", "month", 12, ["xgb"])
+    assert "error" not in r, r
+    assert r["best"] == "xgb"
+    assert len(r["models"][0]["forecast"]) == 12
+    assert np.isfinite(r["models"][0]["forecast"]).all()
+
+
 def test_too_short():
     assert "error" in forecast_series([1, 2, 3], "2025-01-01", "month", 12)
 

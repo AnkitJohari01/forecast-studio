@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: forecast-studio-api
+    runtime: docker
+    # shortcut: free demo resources; upgrade if forecasts exceed memory or latency limits.
+    plan: free
+    rootDir: forecast-studio/backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    envVars:
+      - key: WEB_CONCURRENCY
+        value: "1"
+      - key: POOL_WORKERS
+        value: "1"
+      - key: CACHE_SIZE
+        value: "32"
+      - key: OMP_NUM_THREADS
+        value: "1"
+      - key: OPENBLAS_NUM_THREADS
+        value: "1"
+      - key: MKL_NUM_THREADS
+        value: "1"
+      - key: ALLOWED_ORIGINS
+        sync: false
