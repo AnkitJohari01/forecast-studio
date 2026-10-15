@@ -49,7 +49,7 @@ def live_api():
 
 
 @pytest.mark.parametrize("freq,n,horizon", [("month", 57, 12), ("week", 130, 13)])
-@pytest.mark.parametrize("key", ["arima", "xgb", "prophet", "hw", "theta", "sr", "sn", "ens", "timesfm"])
+@pytest.mark.parametrize("key", ["arima", "xgb", "prophet", "hw", "theta", "sr", "sn", "sarima", "lgb", "ridge", "ma", "ens", "timesfm"])
 def test_selected_model_returns_its_own_finite_forecast(live_api, freq, n, horizon, key):
     period = 12 if freq == "month" else 52
     values = [100 + 2*i + 10*np.sin(2*np.pi*i/period) for i in range(n)]

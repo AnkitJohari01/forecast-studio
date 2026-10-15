@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './lib/charts';
 import { buildSeries, defaultsFor, dimValues, getDates, makeDataset, makeSample, maxH, seasonLen, unitWord } from './lib/data';
-import { clamp, effectiveCurrency, makeFmt, sum, type Currency } from './lib/format';
+import { accOf, clamp, effectiveCurrency, makeFmt, sum, type Currency } from './lib/format';
 import { computeScenario, PRESETS, presetScenario } from './lib/scenario';
-import { isLive, type Cfg, type Dataset, type Gran, type Scenario, type View } from './lib/types';
+import { isLive, type Cfg, type Dataset, type Gran, type ModelResult, type Scenario, type View } from './lib/types';
+import { modelRegistry } from './lib/api';
 import { useForecast } from './lib/useForecast';
 import { ForecastTable } from './components/ForecastTable';
 import { Hero } from './components/Hero';
@@ -13,12 +14,6 @@ import { Segments, type SegRow } from './components/Segments';
 import { Sidebar } from './components/Sidebar';
 import { Toolbar } from './components/Toolbar';
 import { WhatIf } from './components/WhatIf';
-
-const MODEL_LIST = [
-  { key: 'ens', name: 'Ensemble' }, { key: 'arima', name: 'ARIMA' }, { key: 'xgb', name: 'XGBoost' }, { key: 'prophet', name: 'Prophet' },
-  { key: 'hw', name: 'Holt-Winters' }, { key: 'theta', name: 'Theta' }, { key: 'sr', name: 'Trend + seasonality' }, { key: 'sn', name: 'Seasonal naive' },
-  { key: 'timesfm', name: 'TimesFM' },
-];
 
 interface Settings { cfg: Cfg; filter: string; gran: Gran; horizon: number }
 type Source = 'sample' | 'upload';
@@ -43,6 +38,13 @@ export default function App() {
   const [st, setSt] = useState<Settings>({ cfg: { date: 'Date', value: 'Revenue', dim: 'Region' }, filter: '__all', gran: 'month', horizon: 12 });
   const saved = useRef<Partial<Record<Source, Settings>>>({});
   const [model, setModel] = useState('auto');
+  const [registry, setRegistry] = useState<ModelResult[]>([]);
+  useEffect(() => {
+    const controller = new AbortController();
+    modelRegistry(controller.signal).then((list) => { if (!controller.signal.aborted) setRegistry(list); })
+      .catch(() => { /* Forecast responses also include the model list when Auto runs. */ });
+    return () => controller.abort();
+  }, []);
   const [conf, setConf] = useState(95);
   const [currency, setCurrency] = useState<Currency>('INR');
   const [scn, setScn] = useState<Scenario>(() => presetScenario('growth'));
@@ -76,6 +78,11 @@ export default function App() {
   const curr = effectiveCurrency(cfg.value, currency);
   const fmt = useMemo(() => makeFmt(curr), [curr]);
   const result = main.data?.main;
+  useEffect(() => {
+    const list = result?.models;
+    if (!registry.length && model === 'auto' && list?.length) setRegistry((current) => current.length ? current : list);
+  }, [registry.length, model, result]);
+  const models = registry.length ? registry : result?.models || [];
 
   const view: View | null = useMemo(() => {
     if (!series || !result || result.error) return null;
@@ -100,16 +107,16 @@ export default function App() {
     return segList.map(({ id, s }, i) => {
       const r = seg.data![id];
       if (!r || r.error) return { v: id, i, err: r?.error };
-      const live = r.models.filter(isLive), b = live.find((m) => m.key === r.best) || live[0];
+      const live = r.models.filter(isLive), b = live.find((m) => m.key === (model === 'auto' ? r.best : model));
       if (!b) return { v: id, i, err: 'No model could be fitted' };
       const fc = b.forecast.slice(0, H), pa = priorAtFn(s.y, fc, M);
       let prior: number | null = 0;
       for (let k = 0; k < H; k++) { const p = pa(k); if (p == null) { prior = null; break; } prior += p; }
       const total = sum(fc);
       return { v: id, i, total, recent: sum(s.y.slice(-Math.min(M, s.y.length))), growth: prior ? total / prior - 1 : null,
-        acc: Math.max(0, 100 - b.wape * 100), model: b.name, hist: s.y.slice(-24), fc: fc.slice(0, 12) };
+        acc: accOf(b), model: b.name, hist: s.y.slice(-24), fc: fc.slice(0, 12) };
     });
-  }, [seg.data, segList, H, M]);
+  }, [seg.data, segList, H, M, model]);
 
   const segSummary: SegSummary | null = useMemo(() => {
     const r = segRows.filter((o) => o.growth != null).sort((a, b) => b.growth! - a.growth!);
@@ -134,7 +141,7 @@ export default function App() {
   const setFilter = (f: string) => setSt((s) => ({ ...s, filter: f }));
   const focusOverview = () => document.getElementById('overview')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   const applyPreset = (k: string) => setScn(presetScenario(k));
-  const modelName = (k: string) => MODEL_LIST.find((m) => m.key === k)?.name || 'model';
+  const modelName = (k: string) => models.find((m) => m.key === k)?.name || 'model';
 
   const title = `${cfg.value || 'Sales'} forecast${filt ? `: ${filt}` : ''}`;
   const busy = main.loading && !view;
@@ -156,7 +163,7 @@ export default function App() {
         {ds && (
           <Toolbar ds={ds} cfg={cfg} setCfg={setCfg} dims={dims} filter={filter} setFilter={setFilter}
             gran={gran} setGran={(g) => setSt((s) => ({ ...s, gran: g, horizon: g === 'week' ? 13 : 12 }))} weekOk={!!info?.dayLevel}
-            model={model} setModel={setModel} models={MODEL_LIST} conf={conf} setConf={setConf} currency={currency} setCurrency={setCurrency} />
+            model={model} setModel={setModel} models={models} conf={conf} setConf={setConf} currency={currency} setCurrency={setCurrency} />
         )}
 
         {!ds && (
@@ -184,7 +191,7 @@ export default function App() {
             {view && (
               <>
                 <WhatIf v={view} gran={gran} fmt={fmt} scn={scn} setScn={setScn} applyPreset={applyPreset} theme={themeKey} />
-                <ModelLab v={view} gran={gran} fmt={fmt} models={MODEL_LIST}
+                <ModelLab v={view} gran={gran} fmt={fmt} models={models}
                   onPick={(k) => { if (k === model) main.retry(); else setModel(k); toast(`Running ${modelName(k)}`); focusOverview(); }}
                   onAuto={() => { if (model === 'auto') main.retry(); else setModel('auto'); toast('Comparing available models'); }} />
                 <div className="grid2" id="insightsSec">
@@ -197,7 +204,7 @@ export default function App() {
                     loading={seg.loading} error={seg.error} retry={seg.retry} />
                 )}
                 <ForecastTable v={view} gran={gran} fmt={fmt} measure={cfg.value} conf={conf} priorAt={priorAtFn(view.s.y, view.fc, M)} toast={toast} />
-                <p className="foot">The selected model runs on the current data. Auto compares available models; Ensemble averages the best available models. TimesFM runs through a separate service. Models are checked against the most recent actual values; accuracy is 100% minus the weighted absolute percentage error. Ranges are approximate prediction intervals based on historical error.</p>
+                <p className="foot">Models come from the shared server registry. Auto selection uses earlier validation data, with a fixed baseline for short histories; the final backtest is held out from selection. Accuracy is max(0, 100% minus WAPE). MAPE excludes zero and near-zero actuals; unavailable metrics show a dash. Ranges are estimated from historical error and do not guarantee coverage.</p>
               </>
             )}
           </div>

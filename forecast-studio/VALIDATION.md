@@ -1,52 +1,47 @@
-# Validation — 15 October 2026
+# Combined branch validation - 15 October 2026
 
-Status: implementation prepared from the supplied `forecast-studio-main.zip`; no hosting deployment or purchase was made. The original ZIPs were left unchanged.
+This package reconciles deployed `codex/forecast-parity` commit `ac223d4f3ccde7a7f954fe1137d2cc55e95ddca1` and `timesfm-update` commit `a200e630b5bb9dd9f13329f031a9c2ae58c0a8c0`. Common base: `2827356576626a8a07a57be13b6619df3e12c5ce`. Eleven file conflicts were resolved locally. No GitHub branch, live service, credentials or original ZIP was changed by this work.
 
-## What changed
+## Retained and combined
 
-- Added a ninth option, TimesFM 2.5, using a separate authenticated service. The main API does not install/load PyTorch and its Render Blueprint remains on Free.
-- Explicit model selection sends that model key, all current aggregated values, the displayed horizon, and `refresh: true`. Auto compares available models. Ensemble evaluates its members and returns the ensemble result.
-- Removed the browser result cache and fixed the request key to include the whole series. Old requests are aborted and their late responses ignored. Results from an earlier input are hidden while a new request runs.
-- The chart, totals, What-if calculations, table, export and segment results consume the selected forecast. Failed selections show an error and Retry; another model is never substituted.
-- Kept all nine choices accessible in Model lab after a single-model request. Unknown/empty model selections are rejected by the API. Model failures are logged instead of being mislabeled as insufficient history.
-- The separate service validates authorization, finite inputs and exact forecast dimensions. It loads the real pretrained checkpoint once and serializes inference. Four training points are allowed because a valid six-period series loses two periods for the recent-data check.
-- Placed `render.yaml` at the repository root so `forecast-studio/backend` resolves correctly.
+All 12 deployed model choices remain: Ensemble, ARIMA, XGBoost, Prophet, Holt-Winters, Theta, Trend + seasonality, Seasonal naive, SARIMA, LightGBM, Ridge Regression and Moving Average. TimesFM is the 13th choice, using the approved separate authenticated service. The frontend obtains the complete list from the API and preserves it after selecting one model, a selected-model failure or a temporary registry-loading failure.
 
-## Real monthly and weekly API checks
+The live branch's strict CSV/date parsing, aggregation, nullable metrics, earlier-validation model selection, independent final backtest, deterministic model code and Python 3.10 backend Docker/dependency configuration are retained. TimesFM service code and its separate Python 3.12 image are unchanged from the previous package. The existing backend does not install PyTorch.
 
-Each row was tested through the main FastAPI route with an explicit model key and refresh enabled. Assertions required the same returned key, no substitute model, the requested forecast length, and finite values. The TimesFM service ran as a real HTTP server in the test process and loaded the downloaded public model weights.
+Explicit selection runs that model with current data/horizon and refresh enabled. Ensemble runs its candidate members and returns only Ensemble when explicitly requested; insufficient working members produce an error. Chart, table, export and segments use the requested model; failed selections do not substitute another model. Caches cannot return a stale frontend selection, and aborted/late results cannot replace a current result.
 
-| Option | Monthly | Weekly |
+## Checks actually run on the combined source
+
+- Backend default suite: **35 passed, 27 skipped**. The skips are 26 opt-in live cases and the existing parity branch's Prophet native-runtime test. The live cases were enabled separately below; Prophet is not being counted as working.
+- Frontend: **13 passed**, including all 13 dropdown options, preserved extra models, model/horizon routing to chart/table/segments, retry, changed middle values, canceled/late responses, strict parsing, nullable metrics and transient registry failure. The registry recovery regression failed before the fix and passed afterward.
+- TypeScript `tsc --noEmit` and `tsc -b`: passed. Vite production build: passed using the existing parity `preserveSymlinks` setting. Node 24.18.0 was used.
+- Separate TimesFM service: **9 passed**, with real-weight tests enabled, including authentication, boundary validation and actual pretrained inference.
+- Fresh independent code review: no unresolved substantive merge regressions. The registry recovery finding was reproduced and fixed. Source comparison confirmed retained parsing, metrics and backend deployment pins.
+
+## Real model selections through the API
+
+Each test requests one named model with refresh enabled, then verifies the same returned model key, exact horizon and finite output. TimesFM runs through a real HTTP service using the actual public Google TimesFM 2.5 checkpoint. Monthly data has 57 points, weekly data 130. Result: **24 passed, 2 failed**.
+
+| Choice | Monthly | Weekly |
 |---|---|---|
 | ARIMA | Passed | Passed |
 | XGBoost | Passed | Passed |
-| Prophet | Blocked by Windows executable launch failure | Same failure |
+| Prophet | Native runtime failed | Native runtime failed |
 | Holt-Winters | Passed | Passed |
 | Theta | Passed | Passed |
 | Trend + seasonality | Passed | Passed |
 | Seasonal naive | Passed | Passed |
+| SARIMA | Passed | Passed |
+| LightGBM | Passed | Passed |
+| Ridge Regression | Passed | Passed |
+| Moving Average | Passed | Passed |
 | Ensemble | Passed | Passed |
-| TimesFM | Passed with real weights | Passed with real weights |
+| TimesFM | Passed, real weights | Passed, real weights |
 
-Command: `RUN_LIVE_MODEL_TESTS=1 python -m pytest tests/test_live_models.py -q` from the backend, with both Python dependency sets installed. Result: **16 passed, 2 failed**. The failures are the Prophet monthly and weekly cases. Prophet's native executable cannot launch in this sandbox (`WinError 623`, illegal system DLL relocation); no fallback implementation or skipped Prophet assertion was added to hide the failure. This does not verify Prophet on the eventual Linux host.
+Prophet could not start its native CmdStan runtime in this Windows sandbox. Its two live assertions failed explicitly. Linux/Render Prophet remains to be checked; no substitute forecast is presented as Prophet.
 
-These are routing and output checks, not a guarantee of forecasting quality for arbitrary business data.
+## Limits and deployment still required
 
-## Other checks actually run
+These are local routing and output checks, not a forecast-quality guarantee or proof that every input has enough history. Local Python was 3.12.14 with the backend's exact pinned package versions; the retained Python 3.10 Linux image was not built or run here. Docker/hosted resource capacity, Render configuration, deployed frontend CORS and actual hosted requests were not verified. TimesFM still requires a separate sufficiently sized running service plus TIMESFM_URL/TIMESFM_TOKEN on Render. Vercel frontend variables require a new deployment. The separate dashboard repository was not updated; its historical parity audit must be repeated after synchronization if matching it remains necessary. Existing Vite 5.4.6 dependencies were not upgraded.
 
-- Frontend `npm test`: **5 passed**. Includes selected model and horizon in requests, switching back makes a fresh request, changed middle values with unchanged totals/endpoints trigger recomputation, retry, and a slow obsolete response cannot overwrite the new selection. A component integration test checks chart input, forecast table and all four sample segment rows switch to TimesFM; a failed Prophet selection removes the old forecast and shows the error.
-- `npm run typecheck`: passed. Fixed the existing incompatible `tsc -b --noEmit` typecheck command to `tsc --noEmit`.
-- Production Vite build: passed with an environment-only `resolve.preserveSymlinks=true` override using Vite's API. The exact `npm run build` failed at native Windows `realpath` with EPERM in this sandbox. Production Vite configuration was left unchanged; the exact Linux build still needs validation.
-- Default backend suite: **10 passed, 1 failed, 18 skipped**. The failing test is `test_all_models_run_monthly`, caused by the same Prophet native executable failure. The 18 skips are the opt-in live tests; those were separately enabled and run with the results above. Six added selection/remote-adapter tests passed, covering selected-key isolation, explicit Ensemble routing, model validation, fresh computation, preserved failure reasons, HTTP authorization/payload and invalid remote forecast dimensions.
-- TimesFM service suite with `TIMESFM_RUN_REAL_TESTS=1`: **9 passed**, including real inference at 4, 57 and 156 input points and horizons 2, 24 and 52. Actual weights were loaded; a native compiler was deliberately unavailable to confirm the service does not require PyTorch graph compilation. Other tests cover token checks, invalid inputs and invalid output.
-- Independent code review found the four-training-point boundary issue; its reproducing test failed before the fix and passed after it. No other actionable findings were reported.
-- Python source syntax checks passed. The standalone service's CPU PyTorch wheel availability was checked against the official CPU wheel index.
-
-## Remaining validation and limits
-
-- No deployed Render/Vercel/service URLs were provided or modified. Configure `TIMESFM_URL` and matching private `TIMESFM_TOKEN` on the main API and separate service, then redeploy both application components. See `TIMESFM_SETUP.md`.
-- Docker execution was not tested: the local Docker Linux daemon was unavailable. Public-domain connectivity, CORS, visual browser/canvas rendering and resource use under real hosting load remain unverified.
-- Render Free still has the original limits for the other models. Moving TimesFM out does not guarantee that every workload fits on the main Free instance. The main app's existing public API has no login; use the existing access-control deployment guidance for real client data.
-- The existing Vite 5.4.6 development toolchain has npm audit findings (one moderate and one high). No new runtime frontend dependency was introduced; `react-test-renderer` is a development-only test dependency. Do not expose the development server publicly.
-
-The package excludes installed dependencies, generated builds/caches, downloaded weights, Git data, credentials and the obsolete `render-vercel.patch`. Service Docker builds download the public weights themselves.
+The full source ZIP excludes installed dependencies, generated builds, caches, weights, credentials and Git metadata. The upload instructions describe how to record a real merge through GitHub's conflict editor; uploading files alone does not establish merge ancestry.

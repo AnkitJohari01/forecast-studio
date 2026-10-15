@@ -3,9 +3,9 @@ import { Bar } from 'react-chartjs-2';
 import type { ChartOptions } from 'chart.js';
 import { cssVar, reduceMotion } from '../lib/charts';
 import { MN, periodLabel, unitWord } from '../lib/data';
-import { accOf, cls, mean, pct, sum, type Fmt } from '../lib/format';
+import { accOf, metricPct, cls, mean, pct, sum, type Fmt } from '../lib/format';
 import { scenarioName, topDriver } from '../lib/scenario';
-import { isLive, type Gran, type Scenario, type View } from '../lib/types';
+import { type Gran, type Scenario, type View } from '../lib/types';
 import { Icon } from './Icons';
 
 export interface SegSummary { top: { v: string; growth: number }; bottom: { v: string; growth: number } }
@@ -22,8 +22,8 @@ export function Insights({ v, gran, fmt, measure, dim, seg, scn }: { v: View; gr
   if (res.seasonal) { const st = res.seasonalStrength; items.push(['wave', <>Seasonality is <b>{st > 0.5 ? 'strong' : st > 0.2 ? 'moderate' : 'weak'}</b>, explaining about {Math.round(st * 100)}% of the swings once the trend is removed.</>]); }
   const k = Math.min(3, n - M);
   if (k > 0) { const a = sum(y.slice(n - k)), b = sum(y.slice(n - k - M, n - M)); if (b) { const d = a / b - 1; items.push(['bolt', <>Recent momentum: the last {k} {unitWord(gran, k)} ran <b className={cls(d)}>{pct(d)}</b> vs a year earlier.</>]); } }
-  const live = res.models.filter(isLive).sort((a, b) => a.wape - b.wape), worst = live[live.length - 1], best = v.best;
-  items.push(['cpu', <><b>{best.name}</b> {live.length > 1 ? `was most accurate among the evaluated models at ${accOf(best).toFixed(1)}%, against ${accOf(worst).toFixed(1)}% for ${worst.name}.` : `scored ${accOf(best).toFixed(1)}% in the recent check.`} {Math.abs(best.bias) >= 0.02 ? `It tends to ${best.bias > 0 ? 'over' : 'under'}-forecast by ${(Math.abs(best.bias) * 100).toFixed(1)}%.` : 'It shows no consistent bias.'}</>]);
+  const best = v.best;
+  items.push(['cpu', <><b>{best.name}</b> scored {metricPct(accOf(best))} on the final backtest. {best.bias == null ? 'Percentage bias is unavailable because actuals total zero.' : Math.abs(best.bias) >= 0.02 ? `It tends to ${best.bias > 0 ? 'over' : 'under'}-forecast by ${(Math.abs(best.bias) * 100).toFixed(1)}%.` : 'It shows no consistent bias.'}</>]);
   if (seg && !v.filter) items.push(['layers', <>By {dim.toLowerCase()}, <b>{seg.top.v}</b> leads at <span className={cls(seg.top.growth)}>{pct(seg.top.growth)}</span>; <b>{seg.bottom.v}</b> trails at <span className={cls(seg.bottom.growth)}>{pct(seg.bottom.growth)}</span>.</>]);
   if (v.scn.active) { const r = v.scn, d = r.total / r.base - 1, drv = topDriver(r); items.push(['sliders', <>The <b>{scenarioName(scn)}</b> scenario moves the total to <b>{fmt(r.total)}</b> (<span className={cls(d)}>{pct(d)}</span> vs base){drv ? `, driven mostly by ${drv}` : ''}.</>]); }
   return (

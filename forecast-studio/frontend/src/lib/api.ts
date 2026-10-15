@@ -1,12 +1,22 @@
 import { periodDate } from './data';
-import type { Gran, Series, SeriesResult } from './types';
+import type { Gran, ModelResult, Series, SeriesResult } from './types';
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, '') || '';
 
 export interface SeriesReq { id: string; s: Series }
 
+export const forecastKey = (list: SeriesReq[], gran: Gran, horizon: number, model = 'auto') =>
+  JSON.stringify([list.map(({ id, s }) => [id, s.lo, s.y]), gran, horizon, model]);
+
+export async function modelRegistry(signal?: AbortSignal): Promise<ModelResult[]> {
+  const response = await fetch(`${API_BASE}/api/models`, { signal });
+  if (!response.ok) throw new Error('Could not load the model list.');
+  return response.json();
+}
+
 /** Run the requested model on the current series, bypassing result caches. */
 export async function forecastBatch(list: SeriesReq[], gran: Gran, horizon: number, signal?: AbortSignal, model = 'auto'): Promise<Record<string, SeriesResult>> {
+  signal?.throwIfAborted();
   if (!list.length) return {};
   const res = await fetch(`${API_BASE}/api/forecast`, {
     method: 'POST', signal, headers: { 'Content-Type': 'application/json' },
@@ -19,6 +29,7 @@ export async function forecastBatch(list: SeriesReq[], gran: Gran, horizon: numb
     throw new Error(msg);
   }
   const data = (await res.json()) as { results: Record<string, SeriesResult> };
-  if (!data.results || list.some(({ id }) => !data.results[id])) throw new Error('The forecasting service returned an incomplete response. Please try again.');
+  signal?.throwIfAborted();
+  if (!data.results || list.some(({ id }) => !data.results[id])) throw new Error('The forecasting service omitted series from its response. Please try again.');
   return data.results;
 }

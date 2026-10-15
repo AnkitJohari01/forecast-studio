@@ -23,7 +23,8 @@ export function makeFmt(cur: Currency) {
 export type Fmt = ReturnType<typeof makeFmt>;
 export const pct = (v: number) => (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%';
 export const cls = (v: number) => (v >= 0 ? 'up' : 'down');
-export const accOf = (m: { wape: number }) => Math.max(0, 100 - m.wape * 100);
+export const accOf = (m: { wape: number | null }) => m.wape == null ? null : Math.max(0, 100 - m.wape * 100);
+export const metricPct = (v: number | null | undefined) => v == null || !Number.isFinite(v) ? '–' : `${v.toFixed(1)}%`;
 export const sum = (a: number[]) => a.reduce((s, v) => s + v, 0);
 export const mean = (a: number[]) => (a.length ? sum(a) / a.length : 0);
 export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));

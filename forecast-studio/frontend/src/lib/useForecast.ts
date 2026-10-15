@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { forecastBatch, type SeriesReq } from './api';
+import { forecastBatch, forecastKey, type SeriesReq } from './api';
 import type { Gran, SeriesResult } from './types';
 
 interface State { key: string; data: Record<string, SeriesResult> | null; loading: boolean; error: string | null }
@@ -8,7 +8,7 @@ interface State { key: string; data: Record<string, SeriesResult> | null; loadin
 export function useForecast(list: SeriesReq[], gran: Gran, horizon: number, enabled = true, model = 'auto') {
   const [state, setState] = useState<State>({ key: '', data: null, loading: false, error: null });
   const [nonce, setNonce] = useState(0);
-  const key = JSON.stringify([list.map((l) => [l.id, l.s.lo, l.s.y]), gran, horizon, model, nonce]);
+  const key = JSON.stringify([forecastKey(list, gran, horizon, model), nonce]);
 
   useEffect(() => {
     if (!enabled || !list.length) return;

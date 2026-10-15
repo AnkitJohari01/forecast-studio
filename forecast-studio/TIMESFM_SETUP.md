@@ -38,10 +38,10 @@ The main API forwards aggregated values to the separate service, so choose a hos
 
 ## Validate the app
 
-1. Open sample data (57 monthly periods). Choose each of the nine options in the dropdown. Each selection sends `POST /api/forecast` with the selected model key, the displayed horizon and `refresh: true`. Auto omits the model list to compare all available models; Ensemble runs the member models before averaging the best three available, or two if only two work.
+1. Open sample data (57 monthly periods). Choose each of the 13 options in the dropdown. Each selection sends `POST /api/forecast` with the selected model key, the displayed horizon and `refresh: true`. Auto omits the model list to compare all available models; Ensemble runs the member models and averages up to three selected using an earlier validation window. The final backtest does not choose the model or members. Short histories may leave Ensemble unavailable.
 2. Confirm the chart title, totals, forecast table, CSV export and segment rows show that selected model's results. A failed model shows an error; another model is never silently substituted. Auto can choose a different best model for each segment.
 3. Change the horizon and then upload changed data. Both must send fresh requests. Switch quickly between models: a slow earlier response must not replace the latest selection.
-4. Choose TimesFM with the separate service configured. The API performs two service calls per series: one to check predictions against recent actual values, then one using all current history. Results must contain exactly the requested number of finite values.
+4. Choose TimesFM with the separate service configured. The API performs up to three service calls per series: earlier validation when history allows, a final backtest, and a forecast using all current history. Results must contain exactly the requested number of finite values.
 5. Stop the TimesFM service and select TimesFM again. You should see a TimesFM connection error and a working Try again button. Select another model to continue.
 
 Insufficient history, service downtime, and model fitting failures can still prevent a model from producing a forecast. The app reports these failures rather than showing misleading output. Short histories can also leave Ensemble with fewer than two working members.
@@ -66,4 +66,6 @@ Frontend tests use Node's built-in test runner and the existing TypeScript compi
 
 Official references: [TimesFM 2.5 model](https://huggingface.co/google/timesfm-2.5-200m-pytorch), [CPU memory guidance](https://github.com/google-research/timesfm/blob/master/timesfm-forecasting/references/system_requirements.md).
 
-To run the real service integration tests, install both sets of Python dependencies, set `TIMESFM_RUN_REAL_TESTS=1` in the service directory, and run `python -m pytest -q`. To check all nine model selections over HTTP, set `RUN_LIVE_MODEL_TESTS=1` in the backend directory and run `python -m pytest tests/test_live_models.py -q`. These checks download/load real weights and require enough RAM. `HF_HOME` can point at an existing model cache.
+The API and TimesFM service use separate Python environments: keep each environment's own requirements file. The API stays on its existing Python 3.10 dependency pins; TimesFM uses its supplied Python 3.12 Dockerfile. The API does not need PyTorch installed.
+
+To run real inference tests, install the service dependencies, set `TIMESFM_RUN_REAL_TESTS=1` in the service directory, and run `python -m pytest -q`. To check all 13 model selections over HTTP in a development environment with both model libraries available, set `RUN_LIVE_MODEL_TESTS=1` in the backend directory and run `python -m pytest tests/test_live_models.py -q`. These checks download/load real weights and require enough RAM. `HF_HOME` can point at an existing model cache.

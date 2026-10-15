@@ -231,6 +231,78 @@ def xgboost_model(y: np.ndarray, ctx: Ctx) -> Fit:
     return Fit(fitted, fc, f"300 trees, depth 3, {X.shape[1]} lag + calendar features")
 
 
+def moving_average(y: np.ndarray, ctx: Ctx) -> Fit:
+    window = min(7, len(y))
+    fitted = pd.Series(y).shift(1).rolling(window, min_periods=1).mean().to_numpy()
+
+    def fc(h):
+        history, out = list(y), []
+        for _ in range(h):
+            value = float(np.mean(history[-window:]))
+            out.append(value)
+            history.append(value)
+        return np.array(out)
+    return Fit(fitted, fc, f'Recursive mean of the preceding {window} periods')
+
+
+def lag_regression(y: np.ndarray, ctx: Ctx, learner: str) -> Fit:
+    """Identical history-only features during training and recursive prediction."""
+    n = len(y)
+    lags = [k for k in (1, 2, 3, ctx.period) if k < n - 7]
+    if not lags:
+        raise ModelUnavailable('Needs at least 9 periods of history')
+    start = max(lags)
+
+    def features(history, t):
+        recent = np.asarray(history[max(0, t - 3):t])
+        return [history[t - k] for k in lags] + [float(recent.mean()), float(recent.std()),
+                np.sin(2 * np.pi * t / ctx.period), np.cos(2 * np.pi * t / ctx.period), float(t)]
+    X = np.array([features(y, t) for t in range(start, n)])
+    if learner == 'lgb':
+        from lightgbm import LGBMRegressor
+        model = LGBMRegressor(n_estimators=200, max_depth=3, num_leaves=7, learning_rate=.05,
+                              min_child_samples=3, n_jobs=1, random_state=7, verbosity=-1,
+                              deterministic=True, force_col_wise=True)
+    else:
+        from sklearn.pipeline import make_pipeline
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.linear_model import Ridge
+        model = make_pipeline(StandardScaler(), Ridge(alpha=1.0))
+    model.fit(X, y[start:])
+    fitted = np.full(n, np.nan)
+    fitted[start:] = model.predict(X)
+
+    def fc(h):
+        history, out = list(y), []
+        for _ in range(h):
+            p = max(0., float(np.asarray(model.predict(np.array([features(history, len(history))])))[0]))
+            history.append(p)
+            out.append(p)
+        return np.array(out)
+    return Fit(fitted, fc, f'Deterministic {learner} with lag, rolling and calendar features')
+
+
+def lightgbm_model(y: np.ndarray, ctx: Ctx) -> Fit:
+    return lag_regression(y, ctx, 'lgb')
+
+
+def ridge_model(y: np.ndarray, ctx: Ctx) -> Fit:
+    return lag_regression(y, ctx, 'ridge')
+
+
+def sarima_model(y: np.ndarray, ctx: Ctx) -> Fit:
+    from statsmodels.tsa.statespace.sarimax import SARIMAX
+    if not ctx.m or len(y) < 2 * ctx.period:
+        raise ModelUnavailable('Needs at least two full years of history')
+    if ctx.period > 24:
+        return arima(y, ctx)  # Fourier regressors avoid a very large weekly state space.
+    result = SARIMAX(y, order=(1, 1, 0), seasonal_order=(0, 1, 1, ctx.period),
+                     enforce_stationarity=False, enforce_invertibility=False).fit(disp=False, maxiter=100)
+    fitted = np.asarray(result.fittedvalues)
+    fitted[:ctx.period + 1] = np.nan
+    return Fit(fitted, lambda h: np.asarray(result.forecast(h)), f'SARIMA(1,1,0)(0,1,1)[{ctx.period}]')
+
+
 def prophet_model(y: np.ndarray, ctx: Ctx) -> Fit:
     try:
         from prophet import Prophet
@@ -243,7 +315,10 @@ def prophet_model(y: np.ndarray, ctx: Ctx) -> Fit:
                   seasonality_mode="multiplicative" if positive and yearly else "additive",
                   changepoint_prior_scale=0.05, uncertainty_samples=0)
     df = pd.DataFrame({"ds": ctx.dates, "y": y})
-    mdl.fit(df)
+    try:
+        mdl.fit(df, seed=7)
+    except Exception as exc:
+        raise ModelUnavailable('Prophet runtime could not start; verify the server CmdStan installation') from exc
     fitted = mdl.predict(df[["ds"]])["yhat"].to_numpy()
 
     def fc(h: int) -> np.ndarray:
@@ -291,6 +366,10 @@ MODELS = [
     {"key": "theta", "name": "Theta", "family": "Exponential smoothing", "desc": "Theta method on deseasonalised data", "fn": theta},
     {"key": "sr", "name": "Trend + seasonality", "family": "Regression", "desc": "Linear trend plus seasonal effects", "fn": trend_seasonality},
     {"key": "sn", "name": "Seasonal naive", "family": "Baseline", "desc": "Same period last year", "fn": seasonal_naive},
+    {"key": "sarima", "name": "SARIMA", "family": "Statistical", "desc": "Seasonal autoregression on past sales", "fn": sarima_model},
+    {"key": "lgb", "name": "LightGBM", "family": "Machine learning", "desc": "Deterministic boosted trees with recursive lag features", "fn": lightgbm_model},
+    {"key": "ridge", "name": "Ridge Regression", "family": "Regression", "desc": "Regularised regression with recursive lag features", "fn": ridge_model},
+    {"key": "ma", "name": "Moving Average", "family": "Baseline", "desc": "Recursive mean of earlier periods", "fn": moving_average},
     {"key": "timesfm", "name": "TimesFM", "family": "Foundation model", "desc": "Google TimesFM 2.5 pretrained time-series model", "fn": timesfm_model},
 ]
-ENSEMBLE = {"key": "ens", "name": "Ensemble", "family": "Ensemble", "desc": "Average of the three most accurate models"}
+ENSEMBLE = {"key": "ens", "name": "Ensemble", "family": "Ensemble", "desc": "Average of up to three models selected on earlier validation"}
