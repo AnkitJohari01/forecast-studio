@@ -1,70 +1,126 @@
 import { useMemo } from 'react';
-import { Bar } from 'react-chartjs-2';
-import type { ChartOptions } from 'chart.js';
-import { cssVar, reduceMotion } from '../lib/charts';
-import { MN, periodLabel, unitWord } from '../lib/data';
-import { accOf, metricPct, cls, mean, pct, sum, type Fmt } from '../lib/format';
-import { scenarioName, topDriver } from '../lib/scenario';
-import { type Gran, type Scenario, type View } from '../lib/types';
-import { Icon } from './Icons';
+import { Line } from 'react-chartjs-2';
+import type { ChartOptions, ScriptableContext } from 'chart.js';
+import { forecastLine, reduceMotion } from '../lib/charts';
+import { maxH, periodLabel, unitWord } from '../lib/data';
+import { accOf, metricPct, cls, pct, type Fmt } from '../lib/format';
+import { PRESETS, scenarioName } from '../lib/scenario';
+import type { Gran, Scenario, View } from '../lib/types';
 
-export interface SegSummary { top: { v: string; growth: number }; bottom: { v: string; growth: number } }
-
-export function Insights({ v, gran, fmt, measure, dim, seg, scn }: { v: View; gran: Gran; fmt: Fmt; measure: string; dim: string; seg: SegSummary | null; scn: Scenario }) {
-  const { s, n, H, M, fc, res, prior } = v, y = s.y, items: [string, JSX.Element][] = [];
-  const total = sum(fc);
-  if (prior) { const d = total / prior - 1; items.push(['trend', <>{measure} is expected to <b>{d >= 0 ? 'grow' : 'decline'} <span className={cls(d)}>{(Math.abs(d) * 100).toFixed(1)}%</span></b> over the next {H} {unitWord(gran, H)} vs the same period last year, reaching <b>{fmt(total)}</b>.</>]); }
-  else items.push(['trend', <>{measure} is forecast at <b>{fmt(total)}</b> over the next {H} {unitWord(gran, H)}.</>]);
-  if (H >= 3) {
-    let pk = 0, lw = 0; fc.forEach((x, i) => { if (x > fc[pk]) pk = i; if (x < fc[lw]) lw = i; });
-    items.push(['cal', <>Strongest {unitWord(gran, 1)} ahead: <b>{periodLabel(s.lo + n + pk, gran)}</b> at {fmt(fc[pk])}. Softest: {periodLabel(s.lo + n + lw, gran)} at {fmt(fc[lw])}.</>]);
-  }
-  if (res.seasonal) { const st = res.seasonalStrength; items.push(['wave', <>Seasonality is <b>{st > 0.5 ? 'strong' : st > 0.2 ? 'moderate' : 'weak'}</b>, explaining about {Math.round(st * 100)}% of the swings once the trend is removed.</>]); }
-  const k = Math.min(3, n - M);
-  if (k > 0) { const a = sum(y.slice(n - k)), b = sum(y.slice(n - k - M, n - M)); if (b) { const d = a / b - 1; items.push(['bolt', <>Recent momentum: the last {k} {unitWord(gran, k)} ran <b className={cls(d)}>{pct(d)}</b> vs a year earlier.</>]); } }
-  const best = v.best;
-  items.push(['cpu', <><b>{best.name}</b> scored {metricPct(accOf(best))} on the final backtest. {best.bias == null ? 'Percentage bias is unavailable because actuals total zero.' : Math.abs(best.bias) >= 0.02 ? `It tends to ${best.bias > 0 ? 'over' : 'under'}-forecast by ${(Math.abs(best.bias) * 100).toFixed(1)}%.` : 'It shows no consistent bias.'}</>]);
-  if (seg && !v.filter) items.push(['layers', <>By {dim.toLowerCase()}, <b>{seg.top.v}</b> leads at <span className={cls(seg.top.growth)}>{pct(seg.top.growth)}</span>; <b>{seg.bottom.v}</b> trails at <span className={cls(seg.bottom.growth)}>{pct(seg.bottom.growth)}</span>.</>]);
-  if (v.scn.active) { const r = v.scn, d = r.total / r.base - 1, drv = topDriver(r); items.push(['sliders', <>The <b>{scenarioName(scn)}</b> scenario moves the total to <b>{fmt(r.total)}</b> (<span className={cls(d)}>{pct(d)}</span> vs base){drv ? `, driven mostly by ${drv}` : ''}.</>]); }
-  return (
-    <section className="card"><h3>What the forecast says</h3><p className="sub">Generated from the model in use and the backtest results</p>
-      <ul className="insights">{items.map(([ic, t], i) => <li key={i}><span className="ic"><Icon name={ic} /></span><span>{t}</span></li>)}</ul>
-    </section>
-  );
+interface Props {
+  v: View | null; gran: Gran; fmt: Fmt; conf: number; model: string; horizon: number; setHorizon: (h: number) => void;
+  scn: Scenario; applyPreset: (k: string) => void; loading: boolean;
 }
 
-export function SeasonChart({ v, gran, theme }: { v: View; gran: Gran; theme: string }) {
-  const { s, n, M } = v, y = s.y;
-  const calc = useMemo(() => {
-    if (n < M) return null;
-    const xs = y.map((_, i) => i), xm = mean(xs), ym = mean(y);
-    let num = 0, den = 0; xs.forEach((x, i) => { num += (x - xm) * (y[i] - ym); den += (x - xm) ** 2; });
-    const b = den ? num / den : 0, a = ym - b * xm, pos = y.every((x) => x > 0);
-    const acc = new Array(M).fill(0), cnt = new Array(M).fill(0);
-    y.forEach((val, t) => { const tr = a + b * t, k = (s.lo + t) % M; acc[k] += pos && tr > 0 ? val / tr - 1 : (val - tr) / (ym || 1); cnt[k]++; });
-    const vals = acc.map((x, k) => (cnt[k] ? (x / cnt[k]) * 100 : 0)), mu = mean(vals);
-    const eff = vals.map((x) => +(x - mu).toFixed(1));
-    const labels = gran === 'month' ? MN.slice() : eff.map((_, i) => 'W' + (i + 1));
-    return { eff, labels, pk: eff.indexOf(Math.max(...eff)), lw: eff.indexOf(Math.min(...eff)) };
-  }, [y, n, M, s.lo, gran]);
+const grad = (c: ScriptableContext<'line'>, stops: string[], vertical = false) => {
+  const { chart } = c, a = chart.chartArea;
+  if (!a) return stops[0];
+  const g = vertical ? chart.ctx.createLinearGradient(0, a.top, 0, a.bottom) : chart.ctx.createLinearGradient(a.left, 0, a.right, 0);
+  stops.forEach((s, i) => g.addColorStop(i / (stops.length - 1), s));
+  return g;
+};
 
-  const chart = useMemo(() => {
-    if (!calc) return null;
-    const muted = cssVar('--muted'), line = cssVar('--line');
-    const options: ChartOptions<'bar'> = {
-      responsive: true, maintainAspectRatio: false, animation: reduceMotion ? false : { duration: 400 },
-      scales: { x: { grid: { display: false }, border: { color: line }, ticks: { color: muted, autoSkip: true, maxRotation: 0 } },
-        y: { grid: { color: line }, border: { display: false }, ticks: { color: muted, callback: (val) => (+val > 0 ? '+' : '') + val + '%', maxTicksLimit: 6 } } },
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (it) => `${(it.raw as number) > 0 ? '+' : ''}${it.raw}% vs trend` } } },
+export function Hero({ v, gran, fmt, conf, model, horizon, setHorizon, scn, applyPreset, loading }: Props) {
+  const mh = maxH(gran);
+  const chartData = useMemo(() => {
+    if (!v) return null;
+    const { s, sel, res, n, H, fc, lo, hi, scn: r } = v;
+    const labels = Array.from({ length: n + H }, (_, i) => periodLabel(s.lo + i, gran));
+    const pad = (k: number) => new Array<number | null>(k).fill(null);
+    const last = s.y[n - 1];
+    return {
+      labels,
+      datasets: [
+        { label: 'Actual', data: [...s.y, ...pad(H)], borderColor: '#E8EEFF', borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.3, fill: 'start' as const,
+          backgroundColor: (c: ScriptableContext<'line'>) => grad(c, ['rgba(232,238,255,.16)', 'rgba(232,238,255,0)'], true) },
+        { label: 'Backtest', data: [...pad(n - res.holdout), ...sel.backtest, ...pad(H)], borderColor: 'rgba(232,238,255,.6)', borderDash: [4, 4], borderWidth: 1.6, pointRadius: 0, pointHoverRadius: 3, tension: 0.3 },
+        { label: 'High', data: [...pad(n - 1), last, ...hi], borderWidth: 0, pointRadius: 0, fill: '+1' as const, tension: 0.3,
+          backgroundColor: (c: ScriptableContext<'line'>) => grad(c, ['rgba(79,123,255,.34)', 'rgba(25,195,177,.22)']) },
+        { label: 'Low', data: [...pad(n - 1), last, ...lo], borderWidth: 0, pointRadius: 0, fill: false, tension: 0.3 },
+        { label: 'Forecast', data: [...pad(n - 1), last, ...fc], borderWidth: 3, pointRadius: 0, pointHoverRadius: 5, tension: 0.3,
+          borderColor: (c: ScriptableContext<'line'>) => grad(c, ['#6F94FF', '#19C3B1']) },
+        { label: 'Scenario', data: r.active ? [...pad(n - 1), last, ...r.series] : [], borderColor: '#F5A524', borderDash: [7, 4], borderWidth: 2.2, pointRadius: 0, pointHoverRadius: 4, tension: 0.3 },
+      ],
     };
-    return { data: { labels: calc.labels, datasets: [{ data: calc.eff, backgroundColor: calc.eff.map((x) => (x >= 0 ? '#4F7BFF' : '#F59E0B')), borderRadius: 6, borderSkipped: false, maxBarThickness: 28 }] }, options };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [calc, theme]);
+  }, [v, gran]);
+
+  const options = useMemo<ChartOptions<'line'>>(() => {
+    const n = v?.n ?? 0;
+    return {
+      responsive: true, maintainAspectRatio: false, animation: reduceMotion ? false : { duration: 450 },
+      interaction: { mode: 'index', intersect: false }, layout: { padding: { top: 4 } },
+      scales: {
+        x: { grid: { display: false }, border: { color: 'rgba(232,238,255,.15)' }, ticks: { color: 'rgba(232,238,255,.55)', maxRotation: 0, autoSkip: true, maxTicksLimit: 10 } },
+        y: { grid: { color: 'rgba(232,238,255,.07)' }, border: { display: false }, ticks: { color: 'rgba(232,238,255,.55)', callback: (val) => fmt(+val), maxTicksLimit: 6 } },
+      },
+      plugins: {
+        forecastLine: { index: n - 1 },
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(9,15,36,.95)', borderColor: 'rgba(255,255,255,.12)', borderWidth: 1, titleColor: '#fff', bodyColor: '#DCE4FF',
+          padding: 12, boxPadding: 4, usePointStyle: true, titleFont: { family: 'Sora', weight: 600 },
+          filter: (it) => {
+            if (it.datasetIndex === 2 || it.datasetIndex === 3) return false;
+            if ((it.datasetIndex === 4 || it.datasetIndex === 5) && it.dataIndex === n - 1) return false;
+            return it.raw != null;
+          },
+          callbacks: {
+            label: (it) => {
+              let t = `${it.dataset.label}: ${fmt(it.raw as number)}`;
+              if (it.datasetIndex === 4) { const d = it.chart.data.datasets; t += `  (${fmt(d[3].data[it.dataIndex] as number)} to ${fmt(d[2].data[it.dataIndex] as number)})`; }
+              return t;
+            },
+            labelColor: (it) => { const c = ['#E8EEFF', 'rgba(232,238,255,.6)', '', '', '#19C3B1', '#F5A524'][it.datasetIndex]; return { borderColor: c, backgroundColor: c }; },
+          },
+        },
+      },
+    };
+  }, [v?.n, fmt]);
+
+  const total = v ? v.fc.reduce((a, b) => a + b, 0) : 0;
+  const r = v?.scn;
+  const hp = ((horizon - 3) / (mh - 3)) * 100;
 
   return (
-    <section className="card"><h3>Seasonal pattern</h3>
-      <p className="sub">{calc ? `Typical ${unitWord(gran, 1)} vs trend. Peak: ${calc.labels[calc.pk]} (${pct(calc.eff[calc.pk] / 100)}), low: ${calc.labels[calc.lw]} (${pct(calc.eff[calc.lw] / 100)})` : 'Needs at least a full year of history to show a seasonal pattern.'}</p>
-      <div className="minichart">{chart && <Bar data={chart.data} options={chart.options} role="img" aria-label="Bar chart of seasonal effect by period" />}</div>
+    <section className="hero" id="overview" aria-label="Forecast overview" aria-busy={loading}>
+      {loading && <div className="overlay"><div><div className="spinner" />Running forecast…</div></div>}
+      <div className="kpis">
+        <div className="kpi"><div className="k"><i style={{ background: 'var(--brand)' }} /><span>Next {horizon} {unitWord(gran, horizon)}</span></div>
+          <div className="v">{v ? fmt(total) : '–'}</div>
+          <div className="n">{v?.prior ? <><span className={'pill ' + cls(total / v.prior - 1)}>{pct(total / v.prior - 1)}</span> vs same period last year</> : 'No prior-year comparison available'}</div></div>
+        <div className="kpi"><div className="k"><i style={{ background: 'var(--brand2)' }} /><span>{v ? periodLabel(v.s.lo + v.n, gran) : 'Next period'} forecast</span></div>
+          <div className="v">{v ? fmt(v.fc[0]) : '–'}</div><div className="n">{v ? `Estimated ${fmt(v.lo[0])} to ${fmt(v.hi[0])}` : ''}</div></div>
+        <div className="kpi"><div className="k"><i style={{ background: '#A78BFA' }} /><span>Backtest accuracy</span></div>
+          <div className="v">{v ? metricPct(accOf(v.sel)) : '–'}</div><div className="n">{v ? `${v.sel.name}, last ${v.res.holdout} ${unitWord(gran, v.res.holdout)}` : ''}</div></div>
+        <div className="kpi"><div className="k"><i style={{ background: 'var(--amber)' }} /><span>{r?.active ? `Scenario: ${scenarioName(scn)}` : 'What-if scenario'}</span></div>
+          <div className="v">{r?.active ? fmt(r.total) : 'Base case'}</div>
+          <div className="n">{r?.active ? <><span className={'pill ' + cls(r.total - r.base)}>{pct(r.total / r.base - 1)}</span> {r.total >= r.base ? '+' : '-'}{fmt(Math.abs(r.total - r.base))} vs base</> : 'Choose a scenario below the chart'}</div></div>
+      </div>
+      <div className="chead">
+        <div><h2>{v ? `${v.sel.name} forecast${model === 'auto' ? ' (auto-selected)' : ''}` : 'Forecast'}</h2>
+          <p>{v ? `${periodLabel(v.s.lo, gran)} to ${periodLabel(v.s.lo + v.n - 1, gran)} actuals, ${v.H} ${unitWord(gran, v.H)} ahead, ${conf}% estimated range` : ''}</p></div>
+        <div className="legend" aria-hidden="true">
+          <span><i className="l-act" />Actual</span><span><i className="l-bt" />Backtest</span><span><i className="l-fc" />Forecast</span><span><i className="l-band" />Estimated range</span>
+          {r?.active && <span><i className="l-sc" />Scenario</span>}
+        </div>
+      </div>
+      <div className="chart-box">{chartData && <Line data={chartData} options={options} plugins={[forecastLine]} aria-label="Line chart of actual sales, backtest and forecast" role="img" />}</div>
+      {v?.s.partial && <p className="hnote">The latest {gran === 'month' ? 'month' : 'week'} is incomplete, so it is left out of training.</p>}
+      <div className="sliders">
+        <div className="slider">
+          <label htmlFor="horizon"><span>Forecast horizon</span><output htmlFor="horizon">{horizon} {unitWord(gran, horizon)}</output></label>
+          <input type="range" id="horizon" min={3} max={mh} step={1} value={horizon} style={{ ['--p' as string]: hp + '%' }} onChange={(e) => setHorizon(+e.target.value)} />
+          <div className="ticks"><span>3</span><span>{mh}</span></div>
+        </div>
+        <div className="slider">
+          <label htmlFor="scnQuick"><span>What-if scenario</span><a href="#whatif">Adjust levers</a></label>
+          <select id="scnQuick" className="hsel" value={scn.preset} onChange={(e) => e.target.value !== 'custom' && applyPreset(e.target.value)}>
+            {Object.entries(PRESETS).map(([k, p]) => <option key={k} value={k}>{p.name}</option>)}
+            {scn.preset === 'custom' && <option value="custom">Custom</option>}
+          </select>
+          <div className="ticks"><span>{r ? (r.active ? `${pct(r.total / r.base - 1)} vs base forecast` : 'No changes to the forecast') : '\u00a0'}</span></div>
+        </div>
+      </div>
     </section>
   );
 }
