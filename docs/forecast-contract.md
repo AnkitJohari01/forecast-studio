@@ -1,5 +1,7 @@
 # Matching forecast results across both applications
 
+Historical audit: this document records the `codex/forecast-parity` implementation before the TimesFM extension. This combined Forecast Studio package preserves its original models, parsing, metrics and earlier-validation rules, and adds TimesFM plus explicit model routing and fresh requests. The other dashboard repository has not been changed here. Cross-application equality after this extension requires synchronizing the other repository and running the comparison again.
+
 Both apps now run the same version of the forecasting code and the same pinned Python dependencies. The dashboard vendors `forecast_core/{data,models,engine}.py` from Forecast Studio's `backend/app`. Any engine update must be copied to both repositories and verified before deployment.
 
 For identical CSV, date and measure columns, category filter, monthly/weekly grain and horizon, both apps return identical model predictions and metrics. CSV strings are preserved until explicit parsing; category labels such as `NA` and leading zeros are not replaced with missing values. Dates are validated, period totals are accumulated in input order, absent periods receive zero totals, and incomplete final periods are excluded using the same rules. If an absent period represents missing data rather than zero sales, repair that data before upload.

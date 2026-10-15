@@ -11,6 +11,8 @@ services:
       CACHE_SIZE: ${CACHE_SIZE:-512}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TIMESFM_URL: ${TIMESFM_URL:-}
+      TIMESFM_TOKEN: ${TIMESFM_TOKEN:-}
     expose:
       - "8000"
 

@@ -3,7 +3,8 @@ import './lib/charts';
 import { buildSeries, defaultsFor, dimValues, getDates, makeDataset, makeSample, maxH, seasonLen, unitWord } from './lib/data';
 import { accOf, clamp, effectiveCurrency, makeFmt, sum, type Currency } from './lib/format';
 import { computeScenario, PRESETS, presetScenario } from './lib/scenario';
-import { isLive, type Cfg, type Dataset, type Gran, type Scenario, type View } from './lib/types';
+import { isLive, type Cfg, type Dataset, type Gran, type ModelResult, type Scenario, type View } from './lib/types';
+import { modelRegistry } from './lib/api';
 import { useForecast } from './lib/useForecast';
 import { ForecastTable } from './components/ForecastTable';
 import { Hero } from './components/Hero';
@@ -37,6 +38,13 @@ export default function App() {
   const [st, setSt] = useState<Settings>({ cfg: { date: 'Date', value: 'Revenue', dim: 'Region' }, filter: '__all', gran: 'month', horizon: 12 });
   const saved = useRef<Partial<Record<Source, Settings>>>({});
   const [model, setModel] = useState('auto');
+  const [registry, setRegistry] = useState<ModelResult[]>([]);
+  useEffect(() => {
+    const controller = new AbortController();
+    modelRegistry(controller.signal).then((list) => { if (!controller.signal.aborted) setRegistry(list); })
+      .catch(() => { /* Forecast responses also include the model list when Auto runs. */ });
+    return () => controller.abort();
+  }, []);
   const [conf, setConf] = useState(95);
   const [currency, setCurrency] = useState<Currency>('INR');
   const [scn, setScn] = useState<Scenario>(() => presetScenario('growth'));
@@ -63,14 +71,18 @@ export default function App() {
   const series = useMemo(() => (ds ? buildSeries(ds, cfg, gran, filt) : null), [ds, cfg, gran, filt]);
   const dims = useMemo(() => (ds ? dimValues(ds, cfg) : []), [ds, cfg]);
   const mainList = useMemo(() => (series ? [{ id: 'main', s: series }] : []), [series]);
-  const main = useForecast(mainList, gran, H);
+  const main = useForecast(mainList, gran, H, true, model);
   const segList = useMemo(() => (ds && cfg.dim ? dims.slice(0, 12).map((v) => ({ id: v, s: buildSeries(ds, cfg, gran, v) })) : []), [ds, cfg, gran, dims]);
-  const seg = useForecast(segList, gran, H, !main.loading && !!main.data);
+  const seg = useForecast(segList, gran, H, !main.loading && !!main.data && !main.data.main?.error, model);
 
   const curr = effectiveCurrency(cfg.value, currency);
   const fmt = useMemo(() => makeFmt(curr), [curr]);
   const result = main.data?.main;
-  const models = result?.models || [];
+  useEffect(() => {
+    const list = result?.models;
+    if (!registry.length && model === 'auto' && list?.length) setRegistry((current) => current.length ? current : list);
+  }, [registry.length, model, result]);
+  const models = registry.length ? registry : result?.models || [];
 
   const view: View | null = useMemo(() => {
     if (!series || !result || result.error) return null;
@@ -78,14 +90,15 @@ export default function App() {
     if (!live.length) return null;
     const best = live.find((m) => m.key === result.best) || live[0];
     const picked = model === 'auto' ? best : live.find((m) => m.key === model);
-    const sel = picked || best, n = series.y.length;
+    if (!picked) return null;
+    const sel = picked, n = series.y.length;
     const fc = sel.forecast.slice(0, H), z = conf === 80 ? 1.2816 : 1.96;
     const w = (k: number) => z * sel.sd * Math.sqrt(1 + 0.15 * k);
     const lo = fc.map((x, k) => Math.max(0, x - w(k))), hi = fc.map((x, k) => x + w(k));
     const pa = priorAtFn(series.y, fc, M);
     let prior: number | null = 0;
     for (let k = 0; k < H; k++) { const p = pa(k); if (p == null) { prior = null; break; } prior += p; }
-    return { s: series, res: result, sel, best, M, n, H, fc, lo, hi, prior: prior || null, filter: filt, fellBack: !picked,
+    return { s: series, res: result, sel, best, M, n, H, fc, lo, hi, prior: prior || null, filter: filt,
       scn: computeScenario(scn, fc, series.lo, n, series.y, M, gran, curr === 'NUM') };
   }, [series, result, model, H, conf, M, filt, scn, gran, curr]);
 
@@ -94,7 +107,7 @@ export default function App() {
     return segList.map(({ id, s }, i) => {
       const r = seg.data![id];
       if (!r || r.error) return { v: id, i, err: r?.error };
-      const live = r.models.filter(isLive), b = live.find((m) => m.key === r.best) || live[0];
+      const live = r.models.filter(isLive), b = live.find((m) => m.key === (model === 'auto' ? r.best : model));
       if (!b) return { v: id, i, err: 'No model could be fitted' };
       const fc = b.forecast.slice(0, H), pa = priorAtFn(s.y, fc, M);
       let prior: number | null = 0;
@@ -103,7 +116,7 @@ export default function App() {
       return { v: id, i, total, recent: sum(s.y.slice(-Math.min(M, s.y.length))), growth: prior ? total / prior - 1 : null,
         acc: accOf(b), model: b.name, hist: s.y.slice(-24), fc: fc.slice(0, 12) };
     });
-  }, [seg.data, segList, H, M]);
+  }, [seg.data, segList, H, M, model]);
 
   const segSummary: SegSummary | null = useMemo(() => {
     const r = segRows.filter((o) => o.growth != null).sort((a, b) => b.growth! - a.growth!);
@@ -168,7 +181,8 @@ export default function App() {
             <p className="sub err">{main.error}</p>
             <p style={{ marginTop: 12 }}><button type="button" className="btn" onClick={main.retry}>Try again</button></p></section>
         )}
-        {ds && result?.error && <section className="card"><h3>Can't forecast this selection</h3><p className="sub err">{result.error}</p></section>}
+        {ds && result?.error && <section className="card" role="alert"><h3>Can't forecast this selection</h3><p className="sub err">{result.error}</p>
+          <button type="button" className="btn" onClick={main.retry}>Try again</button></section>}
 
         {ds && !main.error && !result?.error && (
           <div style={{ display: 'grid', gap: 26 }}>
@@ -177,9 +191,9 @@ export default function App() {
             {view && (
               <>
                 <WhatIf v={view} gran={gran} fmt={fmt} scn={scn} setScn={setScn} applyPreset={applyPreset} theme={themeKey} />
-                <ModelLab v={view} gran={gran} fmt={fmt}
-                  onPick={(k) => { setModel(k); toast(`Using ${modelName(k)}`); focusOverview(); }}
-                  onAuto={() => { setModel('auto'); toast('Using the auto-selected model'); }} />
+                <ModelLab v={view} gran={gran} fmt={fmt} models={models}
+                  onPick={(k) => { if (k === model) main.retry(); else setModel(k); toast(`Running ${modelName(k)}`); focusOverview(); }}
+                  onAuto={() => { if (model === 'auto') main.retry(); else setModel('auto'); toast('Comparing available models'); }} />
                 <div className="grid2" id="insightsSec">
                   <Insights v={view} gran={gran} fmt={fmt} measure={cfg.value} dim={cfg.dim} seg={segSummary} scn={scn} />
                   <SeasonChart v={view} gran={gran} theme={themeKey} />

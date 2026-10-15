@@ -23,7 +23,7 @@ export function Insights({ v, gran, fmt, measure, dim, seg, scn }: { v: View; gr
   const k = Math.min(3, n - M);
   if (k > 0) { const a = sum(y.slice(n - k)), b = sum(y.slice(n - k - M, n - M)); if (b) { const d = a / b - 1; items.push(['bolt', <>Recent momentum: the last {k} {unitWord(gran, k)} ran <b className={cls(d)}>{pct(d)}</b> vs a year earlier.</>]); } }
   const best = v.best;
-  items.push(['cpu', <><b>{best.name}</b> was auto-selected and scored {metricPct(accOf(best))} on the final backtest. {best.bias == null ? 'Percentage bias is unavailable because actuals total zero.' : Math.abs(best.bias) >= 0.02 ? `It tends to ${best.bias > 0 ? 'over' : 'under'}-forecast by ${(Math.abs(best.bias) * 100).toFixed(1)}%.` : 'It shows no consistent bias.'}</>]);
+  items.push(['cpu', <><b>{best.name}</b> scored {metricPct(accOf(best))} on the final backtest. {best.bias == null ? 'Percentage bias is unavailable because actuals total zero.' : Math.abs(best.bias) >= 0.02 ? `It tends to ${best.bias > 0 ? 'over' : 'under'}-forecast by ${(Math.abs(best.bias) * 100).toFixed(1)}%.` : 'It shows no consistent bias.'}</>]);
   if (seg && !v.filter) items.push(['layers', <>By {dim.toLowerCase()}, <b>{seg.top.v}</b> leads at <span className={cls(seg.top.growth)}>{pct(seg.top.growth)}</span>; <b>{seg.bottom.v}</b> trails at <span className={cls(seg.bottom.growth)}>{pct(seg.bottom.growth)}</span>.</>]);
   if (v.scn.active) { const r = v.scn, d = r.total / r.base - 1, drv = topDriver(r); items.push(['sliders', <>The <b>{scenarioName(scn)}</b> scenario moves the total to <b>{fmt(r.total)}</b> (<span className={cls(d)}>{pct(d)}</span> vs base){drv ? `, driven mostly by ${drv}` : ''}.</>]); }
   return (

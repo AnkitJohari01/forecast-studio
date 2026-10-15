@@ -1,29 +1,27 @@
 import { periodDate } from './data';
-import type { Gran, Series, SeriesResult } from './types';
+import type { Gran, ModelResult, Series, SeriesResult } from './types';
 
-const API_BASE = (import.meta.env?.VITE_API_BASE as string | undefined)?.replace(/\/$/, '') || '';
-const cache = new Map<string, SeriesResult>();
+const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, '') || '';
 
 export interface SeriesReq { id: string; s: Series }
 
-export const forecastKey = (list: SeriesReq[], gran: Gran, horizon: number) =>
-  JSON.stringify([list.map(({ id, s }) => [id, s.lo, s.y]), gran, horizon]);
+export const forecastKey = (list: SeriesReq[], gran: Gran, horizon: number, model = 'auto') =>
+  JSON.stringify([list.map(({ id, s }) => [id, s.lo, s.y]), gran, horizon, model]);
 
-/** Forecast many series in one request. Results are cached per series in memory. */
-export async function forecastBatch(list: SeriesReq[], gran: Gran, horizon: number, signal?: AbortSignal): Promise<Record<string, SeriesResult>> {
+export async function modelRegistry(signal?: AbortSignal): Promise<ModelResult[]> {
+  const response = await fetch(`${API_BASE}/api/models`, { signal });
+  if (!response.ok) throw new Error('Could not load the model list.');
+  return response.json();
+}
+
+/** Run the requested model on the current series, bypassing result caches. */
+export async function forecastBatch(list: SeriesReq[], gran: Gran, horizon: number, signal?: AbortSignal, model = 'auto'): Promise<Record<string, SeriesResult>> {
   signal?.throwIfAborted();
-  const out: Record<string, SeriesResult> = {};
-  const todo: { id: string; key: string; values: number[]; start: string }[] = [];
-  for (const { id, s } of list) {
-    const start = periodDate(s.lo, gran).toISOString().slice(0, 10);
-    const key = JSON.stringify([s.y, start, gran, horizon]);
-    const hit = cache.get(key);
-    if (hit) out[id] = hit; else todo.push({ id, key, values: s.y, start });
-  }
-  if (!todo.length) return out;
+  if (!list.length) return {};
   const res = await fetch(`${API_BASE}/api/forecast`, {
     method: 'POST', signal, headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ freq: gran, horizon, series: todo.map(({ id, values, start }) => ({ id, values, start })) }),
+    body: JSON.stringify({ freq: gran, horizon, refresh: true, models: model === 'auto' ? undefined : [model],
+      series: list.map(({ id, s }) => ({ id, values: s.y, start: periodDate(s.lo, gran).toISOString().slice(0, 10) })) }),
   });
   if (!res.ok) {
     let msg = `The forecasting service returned an error (${res.status}).`;
@@ -32,10 +30,6 @@ export async function forecastBatch(list: SeriesReq[], gran: Gran, horizon: numb
   }
   const data = (await res.json()) as { results: Record<string, SeriesResult> };
   signal?.throwIfAborted();
-  for (const t of todo) {
-    const r = data.results?.[t.id];
-    if (!r) throw new Error(`The forecasting service omitted series ${t.id}. Please retry.`);
-    out[t.id] = r; if (!r.error) cache.set(t.key, r);
-  }
-  return out;
+  if (!data.results || list.some(({ id }) => !data.results[id])) throw new Error('The forecasting service omitted series from its response. Please try again.');
+  return data.results;
 }

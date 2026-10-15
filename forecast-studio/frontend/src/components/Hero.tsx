@@ -83,7 +83,7 @@ export function Hero({ v, gran, fmt, conf, model, horizon, setHorizon, scn, appl
 
   return (
     <section className="hero" id="overview" aria-label="Forecast overview" aria-busy={loading}>
-      {loading && <div className="overlay"><div><div className="spinner" />Training models on the server…</div></div>}
+      {loading && <div className="overlay"><div><div className="spinner" />Running forecast…</div></div>}
       <div className="kpis">
         <div className="kpi"><div className="k"><i style={{ background: 'var(--brand)' }} /><span>Next {horizon} {unitWord(gran, horizon)}</span></div>
           <div className="v">{v ? fmt(total) : '–'}</div>
@@ -98,7 +98,7 @@ export function Hero({ v, gran, fmt, conf, model, horizon, setHorizon, scn, appl
       </div>
       <div className="chead">
         <div><h2>{v ? `${v.sel.name} forecast${model === 'auto' ? ' (auto-selected)' : ''}` : 'Forecast'}</h2>
-          <p>{v ? `${periodLabel(v.s.lo, gran)} to ${periodLabel(v.s.lo + v.n - 1, gran)} actuals, ${v.H} ${unitWord(gran, v.H)} ahead, ${conf}% estimated range${v.fellBack ? '. The chosen model needs more history, so the auto-selected one is shown.' : ''}` : ''}</p></div>
+          <p>{v ? `${periodLabel(v.s.lo, gran)} to ${periodLabel(v.s.lo + v.n - 1, gran)} actuals, ${v.H} ${unitWord(gran, v.H)} ahead, ${conf}% estimated range` : ''}</p></div>
         <div className="legend" aria-hidden="true">
           <span><i className="l-act" />Actual</span><span><i className="l-bt" />Backtest</span><span><i className="l-fc" />Forecast</span><span><i className="l-band" />Estimated range</span>
           {r?.active && <span><i className="l-sc" />Scenario</span>}

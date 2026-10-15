@@ -18,14 +18,14 @@ function Ring({ acc }: { acc: number | null }) {
   );
 }
 
-export function ModelLab({ v, gran, fmt, onPick, onAuto }: { v: View; gran: Gran; fmt: Fmt; onPick: (k: string) => void; onAuto: () => void }) {
+export function ModelLab({ v, gran, fmt, models, onPick, onAuto }: { v: View; gran: Gran; fmt: Fmt; models: { key: string; name: string }[]; onPick: (k: string) => void; onAuto: () => void }) {
   const { res, sel, best, n, s } = v;
   const ranked = [...res.models].sort((a, b) => (isLive(a) ? 0 : 1) - (isLive(b) ? 0 : 1) || (a.wape ?? Infinity) - (b.wape ?? Infinity));
   const show = Math.min(n, 24), act = s.y.slice(n - show), W = 200, Hh = 46;
   return (
     <section id="models">
       <div className="sec-h">
-        <div><h2>Model lab</h2><p>Scores cover the final {res.holdout} {unitWord(gran, res.holdout)} held out from training and selection. {res.selection_basis === 'fixed_baseline_short_history' ? 'Auto uses a fixed baseline because history is short.' : 'Auto chooses on an earlier validation window.'} Cards rank final backtest accuracy; select one to use it.</p></div>
+        <div><h2>Model lab</h2><p>Scores cover the final {res.holdout} {unitWord(gran, res.holdout)} held out from training and selection. {res.selection_basis === 'fixed_baseline_short_history' ? 'Auto uses a fixed baseline because history is short.' : 'Auto chooses on an earlier validation window.'} Cards rank final backtest accuracy. Select a card to run that model on current data.</p></div>
         <button type="button" className="btn" onClick={onAuto}><Icon name="star" />Use validated model</button>
       </div>
       <div className="mgrid">
@@ -57,6 +57,11 @@ export function ModelLab({ v, gran, fmt, onPick, onAuto }: { v: View; gran: Gran
             </button>
           );
         })}
+        {models.filter((m) => !res.models.some((r) => r.key === m.key)).map((m) => (
+          <button key={m.key} type="button" className="mcard" onClick={() => onPick(m.key)}>
+            <div className="mname">{m.name}</div><div className="mdesc">Select to run on the current data.</div>
+          </button>
+        ))}
       </div>
     </section>
   );

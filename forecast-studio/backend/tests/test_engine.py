@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
@@ -18,6 +19,9 @@ def test_all_models_run_monthly():
     keys = {m["key"] for m in r["models"] if "na" not in m}
     assert {"arima", "xgb", "hw", "theta", "sr", "sn", "ens", "sarima", "lgb", "ridge", "ma"} <= keys
     for m in r["models"]:
+        if m['key'] == 'timesfm' and not os.getenv('TIMESFM_URL'):
+            assert 'not configured' in m['na']
+            continue
         if 'na' in m:
             assert m['key'] == 'prophet' and 'runtime' in m['na'].lower(), m
             continue

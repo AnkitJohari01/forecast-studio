@@ -1,14 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { registerHooks } from 'node:module';
 import { buildSeries, getDates, makeDataset, parseDate, parseNumber } from '../src/lib/data.ts';
 import { accOf, metricPct } from '../src/lib/format.ts';
 
-// Node's TS stripping does not resolve Vite's extensionless source imports.
-registerHooks({ resolve(specifier, context, nextResolve) {
-  if (specifier.startsWith('.') && !/\.[a-z]+$/i.test(specifier)) specifier += '.ts';
-  return nextResolve(specifier, context);
-} });
 const { forecastBatch, forecastKey } = await import('../src/lib/api.ts');
 const req = (y, lo = 24288) => [{ id: 'main', s: { lo, y, partial: false } }];
 
@@ -72,7 +66,7 @@ test('aggregation sums valid rows in input order and inserts missing periods', (
   assert.deepEqual(buildSeries(ds, cfg, 'month', 'A').y, [10, 0, 7]);
 });
 
-test('cache distinguishes equal-sum series, reuses exact inputs, and rejects canceled results', async () => {
+test('requests fresh equal-sum series and rejects canceled or incomplete results', async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;
   globalThis.fetch = async (_url, options) => {
@@ -85,7 +79,7 @@ test('cache distinguishes equal-sum series, reuses exact inputs, and rejects can
     assert.deepEqual((await forecastBatch(a, 'month', 12)).main.marker, a[0].s.y);
     assert.deepEqual((await forecastBatch(b, 'month', 12)).main.marker, b[0].s.y);
     await forecastBatch(a, 'month', 12);
-    assert.equal(calls, 2);
+    assert.equal(calls, 3);
     const ctrl = new AbortController(); ctrl.abort();
     await assert.rejects(forecastBatch(a, 'month', 12, ctrl.signal), { name: 'AbortError' });
     const late = new AbortController();

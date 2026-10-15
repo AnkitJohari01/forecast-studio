@@ -1,5 +1,7 @@
 # Forecast Studio: Render + Vercel
 
+For the TimesFM update, also follow [TIMESFM_SETUP.md](TIMESFM_SETUP.md). TimesFM runs on a separate host; the main API's Render Free plan is unchanged. All nine options appear in the frontend, and each explicit selection runs only that option (Ensemble runs its member models). TimesFM needs its service URL and token configured before it can produce results.
+
 Repository: https://github.com/AnkitJohari01/forecast-studio
 
 The browser loads the React app from Vercel and calls the Python API directly on Render over HTTPS. No database is needed. CSV parsing stays in the browser; aggregated series go to the API. The API's cache is temporary.
@@ -54,7 +56,7 @@ Changing `VITE_API_BASE` requires a new Vercel deployment because Vite embeds it
 
 1. Open the Render health endpoint and confirm `{"status":"ok"}`.
 2. Open the Vercel production URL. The sample-data dashboard should finish forecasting and show charts, model scores, and segment forecasts.
-3. In Model lab, confirm all eight models are listed for the sample monthly data.
+3. In Model lab, confirm all nine models are listed (TimesFM requires its separate service) for the sample monthly data.
 4. Select a region and change the forecast horizon. Confirm the values update.
 5. Upload a small CSV with at least six periods and confirm it forecasts. Reload the page; uploads are not saved.
 

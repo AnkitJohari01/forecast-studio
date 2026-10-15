@@ -11,12 +11,12 @@ export function Segments({ rows, dim, gran, M, n, H, fmt, filter, onPick, loadin
   const maxG = Math.max(0.01, ...rows.filter((o) => o.growth != null).map((o) => Math.abs(o.growth!)));
   return (
     <section className="card" id="segments">
-      <div className="sec-h" style={{ margin: 0 }}><div><h3>Outlook by {dim.toLowerCase()}</h3><p className="sub">Each segment gets its own forecast from its auto-selected model. Select a name to focus the chart on it.</p></div></div>
+      <div className="sec-h" style={{ margin: 0 }}><div><h3>Outlook by {dim.toLowerCase()}</h3><p className="sub">Each segment uses your selected model. Auto chooses a model for each segment using earlier validation data. Select a name to focus the chart on it.</p></div></div>
       <div className="tbl-wrap">
         {error ? <p className="sub err">{error} <button type="button" className="btn" onClick={retry}>Try again</button></p>
           : loading && !rows.length ? <p className="sub">Training models for each {dim.toLowerCase()}…</p> : (
           <table>
-            <thead><tr><th>{dim}</th><th>Trend and forecast</th><th className="num">Last {Math.min(M, n)} {unitWord(gran, M)}</th><th className="num">Next {H} {unitWord(gran, H)}</th><th>Growth vs last year</th><th>Auto-selected model</th><th className="num">Accuracy</th></tr></thead>
+            <thead><tr><th>{dim}</th><th>Trend and forecast</th><th className="num">Last {Math.min(M, n)} {unitWord(gran, M)}</th><th className="num">Next {H} {unitWord(gran, H)}</th><th>Growth vs last year</th><th>Model used</th><th className="num">Accuracy</th></tr></thead>
             <tbody>
               {rows.map((o) => {
                 const sel = filter === o.v, col = SEG_COLORS[o.i % SEG_COLORS.length];

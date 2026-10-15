@@ -108,7 +108,7 @@ def forecast_series(values: Iterable[float], start: str, freq: str, horizon: int
 
     live = [m for m in out if 'na' not in m]
     eligible = sorted([m for m in live if m['validation_wape'] is not None], key=lambda m: (m['validation_wape'], m['key']))
-    if len(eligible) >= 2:
+    if len(eligible) >= 2 and (wanted is None or 'ens' in wanted):
         top = eligible[:3]
         bt = np.mean([m['backtest'] for m in top], axis=0)
         fc = np.mean([m['forecast'] for m in top], axis=0)
@@ -123,8 +123,13 @@ def forecast_series(values: Iterable[float], start: str, freq: str, horizon: int
         eligible.append(ensemble)
     elif wanted is None or 'ens' in wanted:
         out.insert(0, {**ENSEMBLE, 'na': 'Needs at least two models with an earlier validation window'})
+    if wanted is not None:
+        out = [m for m in out if m['key'] in wanted]
+        live = [m for m in out if 'na' not in m]
+        eligible = [m for m in eligible if m['key'] in wanted]
     if not live:
-        return {'error': 'None of the models could be fitted to this series.', 'models': out}
+        reason = '; '.join(f"{m['name']}: {m['na']}" for m in out)
+        return {'error': reason or 'None of the selected models could be fitted to this series.', 'models': out}
     if eligible:
         best = min(eligible, key=lambda m: (m['validation_wape'], m['key']))
     else:
