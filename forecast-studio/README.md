@@ -1,9 +1,11 @@
 # Forecast Studio · Predictive Sales Analytics
 
+Now includes TimesFM 2.5 as a ninth forecasting option through a separate service. Model selection, horizon changes and changed data request fresh forecasts; failures are shown without substituting another model. See [TimesFM setup](TIMESFM_SETUP.md) and [current validation](VALIDATION.md).
+
 A production-ready predictive analytics application. It has two parts:
 
 - A **React + TypeScript** frontend with the forecast dashboard, What-if scenario planner, model lab, segment outlook and CSV upload.
-- A **Python FastAPI** backend that trains real forecasting models: ARIMA (statsmodels SARIMAX), XGBoost, Prophet, Holt-Winters, Theta, trend + seasonality regression, seasonal naive, and an ensemble of the top three.
+- A **Python FastAPI** backend that trains real forecasting models: ARIMA (statsmodels SARIMAX), XGBoost, Prophet, Holt-Winters, Theta, trend + seasonality regression, seasonal naive, an ensemble of the top three, and TimesFM through a separate service.
 
 ```
 Browser ──► web (nginx: React build + /api proxy) ──► api (FastAPI + gunicorn)
@@ -91,7 +93,7 @@ Keep `--min-replicas 1` on the API to avoid cold starts. Releases: rebuild with 
 | `ALLOWED_ORIGINS` | api | empty | CORS origins (only for split-domain hosting) |
 | `VITE_API_BASE` | web build arg | empty | API URL if not same-origin |
 
-**Sizing:** each API worker uses roughly 400–700 MB with all libraries loaded. A full forecast (8 models with backtest) takes about 2 s per series. Segment forecasts run in parallel.
+**Sizing:** each API worker uses roughly 400–700 MB with all libraries loaded. A full forecast (available models with backtest) takes about 2 s per series. Segment forecasts run in parallel.
 
 ---
 

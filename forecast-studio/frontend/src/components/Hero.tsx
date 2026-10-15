@@ -3,7 +3,7 @@ import { Line } from 'react-chartjs-2';
 import type { ChartOptions, ScriptableContext } from 'chart.js';
 import { forecastLine, reduceMotion } from '../lib/charts';
 import { maxH, periodLabel, unitWord } from '../lib/data';
-import { accOf, cls, pct, type Fmt } from '../lib/format';
+import { accOf, metricPct, cls, pct, type Fmt } from '../lib/format';
 import { PRESETS, scenarioName } from '../lib/scenario';
 import type { Gran, Scenario, View } from '../lib/types';
 
@@ -83,24 +83,24 @@ export function Hero({ v, gran, fmt, conf, model, horizon, setHorizon, scn, appl
 
   return (
     <section className="hero" id="overview" aria-label="Forecast overview" aria-busy={loading}>
-      {loading && <div className="overlay"><div><div className="spinner" />Training models on the server…</div></div>}
+      {loading && <div className="overlay"><div><div className="spinner" />Running forecast…</div></div>}
       <div className="kpis">
         <div className="kpi"><div className="k"><i style={{ background: 'var(--brand)' }} /><span>Next {horizon} {unitWord(gran, horizon)}</span></div>
           <div className="v">{v ? fmt(total) : '–'}</div>
           <div className="n">{v?.prior ? <><span className={'pill ' + cls(total / v.prior - 1)}>{pct(total / v.prior - 1)}</span> vs same period last year</> : 'No prior-year comparison available'}</div></div>
         <div className="kpi"><div className="k"><i style={{ background: 'var(--brand2)' }} /><span>{v ? periodLabel(v.s.lo + v.n, gran) : 'Next period'} forecast</span></div>
-          <div className="v">{v ? fmt(v.fc[0]) : '–'}</div><div className="n">{v ? `Likely ${fmt(v.lo[0])} to ${fmt(v.hi[0])}` : ''}</div></div>
+          <div className="v">{v ? fmt(v.fc[0]) : '–'}</div><div className="n">{v ? `Estimated ${fmt(v.lo[0])} to ${fmt(v.hi[0])}` : ''}</div></div>
         <div className="kpi"><div className="k"><i style={{ background: '#A78BFA' }} /><span>Backtest accuracy</span></div>
-          <div className="v">{v ? accOf(v.sel).toFixed(1) + '%' : '–'}</div><div className="n">{v ? `${v.sel.name}, last ${v.res.holdout} ${unitWord(gran, v.res.holdout)}` : ''}</div></div>
+          <div className="v">{v ? metricPct(accOf(v.sel)) : '–'}</div><div className="n">{v ? `${v.sel.name}, last ${v.res.holdout} ${unitWord(gran, v.res.holdout)}` : ''}</div></div>
         <div className="kpi"><div className="k"><i style={{ background: 'var(--amber)' }} /><span>{r?.active ? `Scenario: ${scenarioName(scn)}` : 'What-if scenario'}</span></div>
           <div className="v">{r?.active ? fmt(r.total) : 'Base case'}</div>
           <div className="n">{r?.active ? <><span className={'pill ' + cls(r.total - r.base)}>{pct(r.total / r.base - 1)}</span> {r.total >= r.base ? '+' : '-'}{fmt(Math.abs(r.total - r.base))} vs base</> : 'Choose a scenario below the chart'}</div></div>
       </div>
       <div className="chead">
         <div><h2>{v ? `${v.sel.name} forecast${model === 'auto' ? ' (auto-selected)' : ''}` : 'Forecast'}</h2>
-          <p>{v ? `${periodLabel(v.s.lo, gran)} to ${periodLabel(v.s.lo + v.n - 1, gran)} actuals, ${v.H} ${unitWord(gran, v.H)} ahead, ${conf}% likely range${v.fellBack ? '. The chosen model needs more history, so the most accurate one is shown.' : ''}` : ''}</p></div>
+          <p>{v ? `${periodLabel(v.s.lo, gran)} to ${periodLabel(v.s.lo + v.n - 1, gran)} actuals, ${v.H} ${unitWord(gran, v.H)} ahead, ${conf}% estimated range` : ''}</p></div>
         <div className="legend" aria-hidden="true">
-          <span><i className="l-act" />Actual</span><span><i className="l-bt" />Backtest</span><span><i className="l-fc" />Forecast</span><span><i className="l-band" />Likely range</span>
+          <span><i className="l-act" />Actual</span><span><i className="l-bt" />Backtest</span><span><i className="l-fc" />Forecast</span><span><i className="l-band" />Estimated range</span>
           {r?.active && <span><i className="l-sc" />Scenario</span>}
         </div>
       </div>

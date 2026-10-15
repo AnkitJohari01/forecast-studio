@@ -1,5 +1,5 @@
 # ---- Forecast Studio API (FastAPI + statsmodels + XGBoost + Prophet) ----
-FROM python:3.12-slim
+FROM python:3.10-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

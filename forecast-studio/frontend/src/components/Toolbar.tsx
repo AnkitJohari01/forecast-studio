@@ -29,12 +29,12 @@ export function Toolbar(p: Props) {
         </select></div>
       <div className="tool"><label htmlFor="model">Forecast model</label>
         <select id="model" value={p.model} onChange={(e) => p.setModel(e.target.value)}>
-          <option value="auto">Auto: most accurate</option>
+          <option value="auto">Auto: validated model</option>
           {p.models.map((m) => <option key={m.key} value={m.key}>{m.name}</option>)}
         </select></div>
-      <div className="tool"><label htmlFor="conf">Likely range</label>
+      <div className="tool"><label htmlFor="conf">Estimated range</label>
         <select id="conf" value={p.conf} onChange={(e) => p.setConf(+e.target.value)}>
-          <option value={95}>95% confidence</option><option value={80}>80% confidence</option>
+          <option value={95}>95% estimated</option><option value={80}>80% estimated</option>
         </select></div>
       <div className="tool"><label htmlFor="currency">Currency</label>
         <select id="currency" value={p.currency} onChange={(e) => p.setCurrency(e.target.value as Currency)}>

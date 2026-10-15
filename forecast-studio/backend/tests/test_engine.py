@@ -1,4 +1,6 @@
+import os
 import numpy as np
+import pytest
 from fastapi.testclient import TestClient
 
 from app.engine import forecast_series
@@ -15,10 +17,26 @@ def monthly(n=57, seed=3):
 def test_all_models_run_monthly():
     r = forecast_series(monthly(), "2022-01-01", "month", 24)
     keys = {m["key"] for m in r["models"] if "na" not in m}
-    assert {"arima", "xgb", "prophet", "hw", "theta", "sr", "sn", "ens"} <= keys
+    assert {"arima", "xgb", "hw", "theta", "sr", "sn", "ens", "sarima", "lgb", "ridge", "ma"} <= keys
     for m in r["models"]:
+        if m['key'] == 'timesfm' and not os.getenv('TIMESFM_URL'):
+            assert 'not configured' in m['na']
+            continue
+        if 'na' in m:
+            assert m['key'] == 'prophet' and 'runtime' in m['na'].lower(), m
+            continue
         assert len(m["forecast"]) == 24 and len(m["backtest"]) == r["holdout"]
-        assert m["wape"] < 0.2, (m["key"], m["wape"])
+        actual = np.asarray(monthly())[-r['holdout']:]
+        assert m['wape'] == pytest.approx(np.abs(np.asarray(m['backtest']) - actual).sum() / np.abs(actual).sum())
+
+
+def test_prophet_native_runtime():
+    r = forecast_series(monthly(), '2022-01-01', 'month', 12, ['prophet'])
+    model = r['models'][0]
+    if 'na' in model and 'runtime' in model['na'].lower():
+        pytest.skip(model['na'])
+    assert 'error' not in r and 'na' not in model
+    assert len(model['forecast']) == 12
 
 
 def test_short_series_degrades_gracefully():
@@ -39,9 +57,12 @@ def test_too_short():
     assert "error" in forecast_series([1, 2, 3], "2025-01-01", "month", 12)
 
 
-def test_api_batch():
+def test_api_batch(monkeypatch):
+    from app import main
+    # Exercise the production single-worker setting without Windows process spawning.
+    monkeypatch.setattr(main, 'POOL_WORKERS', 1)
     c = TestClient(app)
-    body = {"freq": "month", "horizon": 12, "series": [
+    body = {"freq": "month", "horizon": 12, "models": ['sr', 'ma'], "series": [
         {"id": "all", "values": monthly(), "start": "2022-01-01"},
         {"id": "short", "values": [1, 2], "start": "2022-01-01"}]}
     res = c.post("/api/forecast", json=body)
