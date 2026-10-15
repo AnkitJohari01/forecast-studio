@@ -1,3 +1,4 @@
+import os
 import numpy as np
 from fastapi.testclient import TestClient
 
@@ -17,6 +18,9 @@ def test_all_models_run_monthly():
     keys = {m["key"] for m in r["models"] if "na" not in m}
     assert {"arima", "xgb", "prophet", "hw", "theta", "sr", "sn", "ens"} <= keys
     for m in r["models"]:
+        if m["key"] == "timesfm" and not os.getenv("TIMESFM_URL"):
+            assert "not configured" in m["na"]
+            continue  # The separate service is optional for the default local test run.
         assert len(m["forecast"]) == 24 and len(m["backtest"]) == r["holdout"]
         assert m["wape"] < 0.2, (m["key"], m["wape"])
 

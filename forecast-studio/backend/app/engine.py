@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import logging
 import warnings
 from typing import Iterable
 
@@ -44,7 +45,7 @@ def forecast_series(values: Iterable[float], start: str, freq: str, horizon: int
     out = []
     for spec in MODELS:
         meta = {k: spec[k] for k in ("key", "name", "family", "desc")}
-        if wanted is not None and spec["key"] not in wanted:
+        if wanted is not None and "ens" not in wanted and spec["key"] not in wanted:
             continue
         try:
             with warnings.catch_warnings():
@@ -53,7 +54,7 @@ def forecast_series(values: Iterable[float], start: str, freq: str, horizon: int
                 bt = np.maximum(np.asarray(fit_t.forecast(hold), dtype=float), 0)
                 fit_f = spec["fn"](y, Ctx(m_for(n), period, dates, alias))
                 fc = np.maximum(np.asarray(fit_f.forecast(horizon), dtype=float), 0)
-            if not (np.all(np.isfinite(bt)) and np.all(np.isfinite(fc))):
+            if bt.shape != (hold,) or fc.shape != (horizon,) or not (np.all(np.isfinite(bt)) and np.all(np.isfinite(fc))):
                 raise ModelUnavailable("Model produced invalid values on this series")
             sc = score(bt)
             insd = sc["rmse"]
@@ -67,10 +68,11 @@ def forecast_series(values: Iterable[float], start: str, freq: str, horizon: int
         except ModelUnavailable as exc:
             out.append({**meta, "na": str(exc)})
         except Exception:  # noqa: BLE001 - never let one model break the response
-            out.append({**meta, "na": "Not enough history for this model"})
+            logging.getLogger("forecast").exception("Model %s failed", spec["key"])
+            out.append({**meta, "na": f"{spec['name']} could not run on this data. Check the server logs."})
 
     live = sorted([o for o in out if "na" not in o], key=lambda o: o["wape"])
-    if len(live) >= 2:
+    if len(live) >= 2 and (wanted is None or "ens" in wanted):
         top = live[:3]
         bt = np.mean([t["backtest"] for t in top], axis=0)
         fc = np.mean([t["forecast"] for t in top], axis=0)
@@ -79,8 +81,14 @@ def forecast_series(values: Iterable[float], start: str, freq: str, horizon: int
                "params": "Average of " + ", ".join(t["name"] for t in top)}
         out.insert(0, ens)
         live.append(ens)
+    elif wanted is not None and "ens" in wanted:
+        out.insert(0, {**ENSEMBLE, "na": "Ensemble needs at least two working models for this data."})
+    if wanted is not None:
+        out = [o for o in out if o["key"] in wanted]
+        live = [o for o in out if "na" not in o]
     if not live:
-        return {"error": "None of the models could be fitted to this series."}
+        reason = "; ".join(f"{o['name']}: {o['na']}" for o in out)
+        return {"models": out, "error": reason or "None of the selected models could be fitted to this series."}
     best = min(live, key=lambda o: o["wape"])
     return {"models": out, "best": best["key"], "holdout": hold, "seasonal": m_for(n) > 0,
             "seasonalStrength": seasonal_strength(y, period), "n": n}

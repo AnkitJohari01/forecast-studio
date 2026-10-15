@@ -1,5 +1,7 @@
 # Forecast Studio deployment preparation
 
+This is the original preparation log. For checks on the TimesFM and dynamic-selection update, see [VALIDATION.md](VALIDATION.md).
+
 Prepared on 14 October 2026 from `AnkitJohari01/forecast-studio`, commit `f712e5d672049bfd10ddfe904ec99451b31a8e5d`.
 
 ## Changes

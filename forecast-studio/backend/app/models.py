@@ -8,7 +8,11 @@ A ``Fit`` exposes in-sample one-step fitted values (may contain NaN) and a
 from __future__ import annotations
 
 import logging
+import json
+import os
 import warnings
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -252,6 +256,33 @@ def prophet_model(y: np.ndarray, ctx: Ctx) -> Fit:
 
 
 # --------------------------------------------------------------------------- registry
+def timesfm_model(y: np.ndarray, ctx: Ctx) -> Fit:
+    base = os.getenv("TIMESFM_URL", "").rstrip("/")
+    token = os.getenv("TIMESFM_TOKEN", "")
+    if not base or not token:
+        raise ModelUnavailable("TimesFM service is not configured. Set TIMESFM_URL and TIMESFM_TOKEN on the API.")
+
+    def fc(h: int) -> np.ndarray:
+        request = Request(base + "/forecast", method="POST",
+                          data=json.dumps({"values": y.tolist(), "horizon": h}).encode(),
+                          headers={"Content-Type": "application/json", "Authorization": "Bearer " + token})
+        try:
+            with urlopen(request, timeout=75) as response:
+                values = json.load(response)["forecast"]
+            result = np.asarray(values, dtype=float)
+            if result.shape != (h,) or not np.all(np.isfinite(result)):
+                raise ValueError("Invalid forecast")
+            return result
+        except HTTPError as exc:
+            raise ModelUnavailable(f"TimesFM service returned HTTP {exc.code}. Check its configuration and logs.") from exc
+        except (URLError, TimeoutError, OSError) as exc:
+            raise ModelUnavailable("TimesFM service could not be reached or timed out. Please try again.") from exc
+        except (ValueError, KeyError, TypeError) as exc:
+            raise ModelUnavailable("TimesFM service returned an invalid forecast.") from exc
+
+    return Fit(None, fc, "TimesFM 2.5, pretrained 200M model via separate service")
+
+
 MODELS = [
     {"key": "arima", "name": "ARIMA", "family": "Statistical", "desc": "Seasonal ARIMA (statsmodels SARIMAX), order by AIC", "fn": arima},
     {"key": "xgb", "name": "XGBoost", "family": "Machine learning", "desc": "Gradient-boosted trees on lag and calendar features", "fn": xgboost_model},
@@ -260,5 +291,6 @@ MODELS = [
     {"key": "theta", "name": "Theta", "family": "Exponential smoothing", "desc": "Theta method on deseasonalised data", "fn": theta},
     {"key": "sr", "name": "Trend + seasonality", "family": "Regression", "desc": "Linear trend plus seasonal effects", "fn": trend_seasonality},
     {"key": "sn", "name": "Seasonal naive", "family": "Baseline", "desc": "Same period last year", "fn": seasonal_naive},
+    {"key": "timesfm", "name": "TimesFM", "family": "Foundation model", "desc": "Google TimesFM 2.5 pretrained time-series model", "fn": timesfm_model},
 ]
 ENSEMBLE = {"key": "ens", "name": "Ensemble", "family": "Ensemble", "desc": "Average of the three most accurate models"}

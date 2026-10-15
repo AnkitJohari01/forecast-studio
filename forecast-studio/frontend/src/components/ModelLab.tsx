@@ -18,14 +18,14 @@ function Ring({ acc }: { acc: number }) {
   );
 }
 
-export function ModelLab({ v, gran, fmt, onPick, onAuto }: { v: View; gran: Gran; fmt: Fmt; onPick: (k: string) => void; onAuto: () => void }) {
+export function ModelLab({ v, gran, fmt, models, onPick, onAuto }: { v: View; gran: Gran; fmt: Fmt; models: { key: string; name: string }[]; onPick: (k: string) => void; onAuto: () => void }) {
   const { res, sel, best, n, s } = v;
   const ranked = [...res.models].sort((a, b) => (isLive(a) ? 0 : 1) - (isLive(b) ? 0 : 1) || (a.wape ?? 9) - (b.wape ?? 9));
   const show = Math.min(n, 24), act = s.y.slice(n - show), W = 200, Hh = 46;
   return (
     <section id="models">
       <div className="sec-h">
-        <div><h2>Model lab</h2><p>Every model was trained on earlier data and asked to predict the last {res.holdout} {unitWord(gran, res.holdout)}. Ranked by accuracy; select a card to use that model.</p></div>
+        <div><h2>Model lab</h2><p>Results are checked against the last {res.holdout} {unitWord(gran, res.holdout)}. Select a card to run that model; Auto compares all available models.</p></div>
         <button type="button" className="btn" onClick={onAuto}><Icon name="star" />Use most accurate</button>
       </div>
       <div className="mgrid">
@@ -44,7 +44,7 @@ export function ModelLab({ v, gran, fmt, onPick, onAuto }: { v: View; gran: Gran
           const isSel = m.key === sel.key;
           return (
             <button key={m.key} type="button" className={'mcard' + (isSel ? ' sel' : '')} aria-pressed={isSel} onClick={() => onPick(m.key)}>
-              {isSel ? <span className="tag">In use</span> : m.key === best.key ? <span className="tag best">Most accurate</span> : null}
+              {isSel ? <span className="tag">In use</span> : m.key === best.key && ranked.length > 1 ? <span className="tag best">Most accurate</span> : null}
               <div className="mtop"><div><div className="rank">#{i + 1}</div><div className="mname">{m.name}</div>{fam}</div><Ring acc={accOf(m)} /></div>
               <svg className="spark" viewBox={`0 0 ${W} ${Hh}`} preserveAspectRatio="none" aria-hidden="true">
                 <rect x={x0} y="0" width={W - x0} height={Hh} fill={`color-mix(in srgb,${col} 9%,transparent)`} />
@@ -57,6 +57,11 @@ export function ModelLab({ v, gran, fmt, onPick, onAuto }: { v: View; gran: Gran
             </button>
           );
         })}
+        {models.filter((m) => !res.models.some((r) => r.key === m.key)).map((m) => (
+          <button key={m.key} type="button" className="mcard" onClick={() => onPick(m.key)}>
+            <div className="mname">{m.name}</div><div className="mdesc">Select to run on the current data.</div>
+          </button>
+        ))}
       </div>
     </section>
   );

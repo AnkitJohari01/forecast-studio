@@ -65,6 +65,15 @@ class ForecastRequest(BaseModel):
     freq: Literal["month", "week"] = "month"
     horizon: int = Field(24, ge=1, le=104)
     models: list[str] | None = None
+    refresh: bool = False
+
+    @field_validator("models")
+    @classmethod
+    def check_models(cls, v: list[str] | None) -> list[str] | None:
+        known = {m["key"] for m in MODELS} | {ENSEMBLE["key"]}
+        if v is not None and (not v or any(k not in known for k in v)):
+            raise ValueError("Select at least one valid model")
+        return v
 
     @field_validator("series")
     @classmethod
@@ -123,7 +132,7 @@ async def forecast(req: ForecastRequest) -> dict:
     todo: list[tuple[str, str, tuple]] = []
     for s in req.series:
         k = _key(s, req)
-        hit = _get(k)
+        hit = None if req.refresh else _get(k)
         if hit is not None:
             results[s.id] = hit
         else:

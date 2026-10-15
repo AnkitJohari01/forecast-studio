@@ -31,7 +31,7 @@ export interface Scenario {
 /** Everything the dashboard needs about the currently selected forecast. */
 export interface View {
   s: Series; res: SeriesResult; sel: LiveModel; best: LiveModel; M: number; n: number; H: number;
-  fc: number[]; lo: number[]; hi: number[]; prior: number | null; filter: string | null; fellBack: boolean;
+  fc: number[]; lo: number[]; hi: number[]; prior: number | null; filter: string | null;
   scn: ScenarioResult;
 }
 export interface ScenarioResult {
