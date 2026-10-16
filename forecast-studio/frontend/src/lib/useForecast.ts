@@ -14,9 +14,17 @@ export function useForecast(list: SeriesReq[], gran: Gran, horizon: number, enab
     if (!enabled || !list.length) return;
     const ctrl = new AbortController();
     setState({ key, data: null, loading: true, error: null });
-    forecastBatch(list, gran, horizon, ctrl.signal, model)
-      .then((data) => { if (!ctrl.signal.aborted) setState({ key, data, loading: false, error: null }); })
-      .catch((e: Error) => { if (!ctrl.signal.aborted) setState({ key, data: null, loading: false, error: e.message || 'Could not reach the forecasting service.' }); });
+    async function run() {
+      let data: Record<string, SeriesResult> = {};
+      // Keep one fit request in flight on small servers, publishing each completed item.
+      for (let i = 0; i < list.length; i++) {
+        const result = await forecastBatch([list[i]], gran, horizon, ctrl.signal, model);
+        if (ctrl.signal.aborted) return;
+        data = { ...data, ...result };
+        setState({ key, data, loading: i < list.length - 1, error: null });
+      }
+    }
+    run().catch((e: Error) => { if (!ctrl.signal.aborted) setState((current) => ({ ...current, loading: false, error: e.message || 'Could not reach the forecasting service.' })); });
     return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, enabled]);
