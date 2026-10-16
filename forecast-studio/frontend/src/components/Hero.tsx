@@ -90,8 +90,8 @@ export function Hero({ v, gran, fmt, conf, model, horizon, setHorizon, scn, appl
           <div className="n">{v?.prior ? <><span className={'pill ' + cls(total / v.prior - 1)}>{pct(total / v.prior - 1)}</span> vs same period last year</> : 'No prior-year comparison available'}</div></div>
         <div className="kpi"><div className="k"><i style={{ background: 'var(--brand2)' }} /><span>{v ? periodLabel(v.s.lo + v.n, gran) : 'Next period'} forecast</span></div>
           <div className="v">{v ? fmt(v.fc[0]) : '–'}</div><div className="n">{v ? `Estimated ${fmt(v.lo[0])} to ${fmt(v.hi[0])}` : ''}</div></div>
-        <div className="kpi"><div className="k"><i style={{ background: '#A78BFA' }} /><span>Backtest accuracy</span></div>
-          <div className="v">{v ? metricPct(accOf(v.sel)) : '–'}</div><div className="n">{v ? `${v.sel.name}, last ${v.res.holdout} ${unitWord(gran, v.res.holdout)}` : ''}</div></div>
+        <div className="kpi"><div className="k"><i style={{ background: '#A78BFA' }} /><span>Validation accuracy</span></div>
+          <div className="v">{v ? metricPct(accOf({ wape: v.sel.validation_wape ?? null })) : '–'}</div><div className="n">{v ? `${v.sel.name} · Backtest accuracy: ${metricPct(accOf(v.sel))}` : ''}</div></div>
         <div className="kpi"><div className="k"><i style={{ background: 'var(--amber)' }} /><span>{r?.active ? `Scenario: ${scenarioName(scn)}` : 'What-if scenario'}</span></div>
           <div className="v">{r?.active ? fmt(r.total) : 'Base case'}</div>
           <div className="n">{r?.active ? <><span className={'pill ' + cls(r.total - r.base)}>{pct(r.total / r.base - 1)}</span> {r.total >= r.base ? '+' : '-'}{fmt(Math.abs(r.total - r.base))} vs base</> : 'Choose a scenario below the chart'}</div></div>
