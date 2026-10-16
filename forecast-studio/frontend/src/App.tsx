@@ -72,7 +72,7 @@ export default function App() {
   const dims = useMemo(() => (ds ? dimValues(ds, cfg) : []), [ds, cfg]);
   const mainList = useMemo(() => (series ? [{ id: 'main', s: series }] : []), [series]);
   const main = useForecast(mainList, gran, H, true, model);
-  const segList = useMemo(() => (ds && cfg.dim ? dims.slice(0, 12).map((v) => ({ id: v, s: buildSeries(ds, cfg, gran, v) })) : []), [ds, cfg, gran, dims]);
+  const segList = useMemo(() => (ds && cfg.dim ? dims.map((v) => ({ id: v, s: buildSeries(ds, cfg, gran, v) })) : []), [ds, cfg, gran, dims]);
   const seg = useForecast(segList, gran, H, !main.loading && !!main.data && !main.data.main?.error, model);
 
   const curr = effectiveCurrency(cfg.value, currency);
