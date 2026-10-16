@@ -104,17 +104,18 @@ export default function App() {
 
   const segRows: SegRow[] = useMemo(() => {
     if (!seg.data) return [];
-    return segList.map(({ id, s }, i) => {
+    return segList.flatMap<SegRow>(({ id, s }, i) => {
       const r = seg.data![id];
-      if (!r || r.error) return { v: id, i, err: r?.error };
+      if (!r) return [];
+      if (r.error) return [{ v: id, i, err: r.error }];
       const live = r.models.filter(isLive), b = live.find((m) => m.key === (model === 'auto' ? r.best : model));
-      if (!b) return { v: id, i, err: 'No model could be fitted' };
+      if (!b) return [{ v: id, i, err: 'No model could be fitted' }];
       const fc = b.forecast.slice(0, H), pa = priorAtFn(s.y, fc, M);
       let prior: number | null = 0;
       for (let k = 0; k < H; k++) { const p = pa(k); if (p == null) { prior = null; break; } prior += p; }
       const total = sum(fc);
-      return { v: id, i, total, recent: sum(s.y.slice(-Math.min(M, s.y.length))), growth: prior ? total / prior - 1 : null,
-        acc: accOf(b), model: b.name, hist: s.y.slice(-24), fc: fc.slice(0, 12) };
+      return [{ v: id, i, total, recent: sum(s.y.slice(-Math.min(M, s.y.length))), growth: prior ? total / prior - 1 : null,
+        acc: accOf(b), model: b.name, hist: s.y.slice(-24), fc: fc.slice(0, 12) }];
     });
   }, [seg.data, segList, H, M, model]);
 
@@ -201,7 +202,7 @@ export default function App() {
                 {cfg.dim && (
                   <Segments rows={segRows} dim={cfg.dim} gran={gran} M={M} n={view.n} H={H} fmt={fmt} filter={filter}
                     onPick={(v) => { setFilter(filter === v ? '__all' : v); focusOverview(); }}
-                    loading={seg.loading} error={seg.error} retry={seg.retry} />
+                    loading={seg.loading} total={segList.length} error={seg.error} retry={seg.retry} />
                 )}
                 <ForecastTable v={view} gran={gran} fmt={fmt} measure={cfg.value} conf={conf} priorAt={priorAtFn(view.s.y, view.fc, M)} toast={toast} />
                 <p className="foot">Models come from the shared server registry. Auto selection uses earlier validation data, with a fixed baseline for short histories; the final backtest is held out from selection. Accuracy is max(0, 100% minus WAPE). MAPE excludes zero and near-zero actuals; unavailable metrics show a dash. Ranges are estimated from historical error and do not guarantee coverage.</p>
