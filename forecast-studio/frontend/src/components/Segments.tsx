@@ -14,7 +14,7 @@ export function Segments({ rows, dim, gran, M, n, H, fmt, filter, onPick, loadin
       <div className="sec-h" style={{ margin: 0 }}><div><h3>Outlook by {dim.toLowerCase()}</h3><p className="sub">Each segment uses your selected model. Auto chooses a model for each segment using earlier validation data. Select a name to focus the chart on it.</p></div></div>
       <p className="sub" role="status" aria-live="polite">{rows.length} of {total} segments checked{loading ? ' — comparing models for the next segment…' : '.'}</p>
       {error && <p className="sub err" role="alert">{error} <button type="button" className="btn" onClick={retry}>Try again</button></p>}
-      <div className="tbl-wrap">
+      <div className="tbl-wrap" style={{ maxHeight: 520, overflowY: 'auto' }} tabIndex={0} role="region" aria-label={`Forecasts by ${dim}`}>
         {!!rows.length && (
           <table>
             <thead><tr><th>{dim}</th><th>Trend and forecast</th><th className="num">Last {Math.min(M, n)} {unitWord(gran, M)}</th><th className="num">Next {H} {unitWord(gran, H)}</th><th>Growth vs last year</th><th>Model used</th><th className="num">Backtest accuracy</th></tr></thead>
