@@ -5,18 +5,19 @@ import type { Gran } from '../lib/types';
 export const SEG_COLORS = ['#4F7BFF', '#19C3B1', '#A855F7', '#F59E0B', '#EC4899', '#22C55E', '#F97316', '#06B6D4', '#8B5CF6', '#EF4444', '#84CC16', '#64748B'];
 export interface SegRow { v: string; i: number; err?: string; total?: number; recent?: number; growth?: number | null; acc?: number | null; model?: string; hist?: number[]; fc?: number[] }
 
-interface Props { rows: SegRow[]; dim: string; gran: Gran; M: number; n: number; H: number; fmt: Fmt; filter: string; onPick: (v: string) => void; loading: boolean; error: string | null; retry: () => void }
+interface Props { rows: SegRow[]; dim: string; gran: Gran; M: number; n: number; H: number; fmt: Fmt; filter: string; onPick: (v: string) => void; loading: boolean; total: number; error: string | null; retry: () => void }
 
-export function Segments({ rows, dim, gran, M, n, H, fmt, filter, onPick, loading, error, retry }: Props) {
+export function Segments({ rows, dim, gran, M, n, H, fmt, filter, onPick, loading, total, error, retry }: Props) {
   const maxG = Math.max(0.01, ...rows.filter((o) => o.growth != null).map((o) => Math.abs(o.growth!)));
   return (
     <section className="card" id="segments">
       <div className="sec-h" style={{ margin: 0 }}><div><h3>Outlook by {dim.toLowerCase()}</h3><p className="sub">Each segment uses your selected model. Auto chooses a model for each segment using earlier validation data. Select a name to focus the chart on it.</p></div></div>
+      <p className="sub" role="status" aria-live="polite">{rows.length} of {total} segments checked{loading ? ' — comparing models for the next segment…' : '.'}</p>
+      {error && <p className="sub err" role="alert">{error} <button type="button" className="btn" onClick={retry}>Try again</button></p>}
       <div className="tbl-wrap">
-        {error ? <p className="sub err">{error} <button type="button" className="btn" onClick={retry}>Try again</button></p>
-          : loading && !rows.length ? <p className="sub">Training models for each {dim.toLowerCase()}…</p> : (
+        {!!rows.length && (
           <table>
-            <thead><tr><th>{dim}</th><th>Trend and forecast</th><th className="num">Last {Math.min(M, n)} {unitWord(gran, M)}</th><th className="num">Next {H} {unitWord(gran, H)}</th><th>Growth vs last year</th><th>Model used</th><th className="num">Accuracy</th></tr></thead>
+            <thead><tr><th>{dim}</th><th>Trend and forecast</th><th className="num">Last {Math.min(M, n)} {unitWord(gran, M)}</th><th className="num">Next {H} {unitWord(gran, H)}</th><th>Growth vs last year</th><th>Model used</th><th className="num">Backtest accuracy</th></tr></thead>
             <tbody>
               {rows.map((o) => {
                 const sel = filter === o.v, col = SEG_COLORS[o.i % SEG_COLORS.length];
