@@ -20,12 +20,12 @@ function Ring({ acc }: { acc: number | null }) {
 
 export function ModelLab({ v, gran, fmt, models, onPick, onAuto }: { v: View; gran: Gran; fmt: Fmt; models: { key: string; name: string }[]; onPick: (k: string) => void; onAuto: () => void }) {
   const { res, sel, best, n, s } = v;
-  const ranked = [...res.models].sort((a, b) => (isLive(a) ? 0 : 1) - (isLive(b) ? 0 : 1) || (a.wape ?? Infinity) - (b.wape ?? Infinity));
+  const ranked = [...res.models].sort((a, b) => (isLive(a) ? 0 : 1) - (isLive(b) ? 0 : 1) || (a.validation_wape ?? Infinity) - (b.validation_wape ?? Infinity) || a.key.localeCompare(b.key));
   const show = Math.min(n, 24), act = s.y.slice(n - show), W = 200, Hh = 46;
   return (
     <section id="models">
       <div className="sec-h">
-        <div><h2>Model lab</h2><p>Scores cover the final {res.holdout} {unitWord(gran, res.holdout)} held out from training and selection. {res.selection_basis === 'fixed_baseline_short_history' ? 'Auto uses a fixed baseline because history is short.' : 'Auto chooses on an earlier validation window.'} Cards rank final backtest accuracy. Select a card to run that model on current data.</p></div>
+        <div><h2>Model lab</h2><p>{res.selection_basis === 'fixed_baseline_short_history' ? 'Auto uses a fixed baseline because history is short.' : `Auto chooses the highest accuracy on the earlier ${res.selection_holdout} ${unitWord(gran, res.selection_holdout || 0)} of validation.`} Cards rank validation accuracy. The final {res.holdout} {unitWord(gran, res.holdout)} are a separate backtest and do not choose the model. Select a card to run that model on current data.</p></div>
         <button type="button" className="btn" onClick={onAuto}><Icon name="star" />Use validated model</button>
       </div>
       <div className="mgrid">
@@ -45,7 +45,7 @@ export function ModelLab({ v, gran, fmt, models, onPick, onAuto }: { v: View; gr
           return (
             <button key={m.key} type="button" className={'mcard' + (isSel ? ' sel' : '')} aria-pressed={isSel} onClick={() => onPick(m.key)}>
               {isSel ? <span className="tag">In use</span> : m.key === best.key ? <span className="tag best">Auto-selected</span> : null}
-              <div className="mtop"><div><div className="rank">{m.wape == null ? 'Not scored' : `#${i + 1}`}</div><div className="mname">{m.name}</div>{fam}</div><Ring acc={accOf(m)} /></div>
+              <div className="mtop"><div><div className="rank">{m.validation_wape == null ? 'Not ranked' : `#${i + 1}`}</div><div className="mname">{m.name}</div>{fam}</div><div><Ring acc={accOf({ wape: m.validation_wape ?? null })} /><span className="sub">Validation accuracy</span></div></div>
               <svg className="spark" viewBox={`0 0 ${W} ${Hh}`} preserveAspectRatio="none" aria-hidden="true">
                 <rect x={x0} y="0" width={W - x0} height={Hh} fill={`color-mix(in srgb,${col} 9%,transparent)`} />
                 <polyline points={pts(act)} fill="none" stroke="var(--muted)" strokeOpacity=".55" strokeWidth="1.6" vectorEffect="non-scaling-stroke" />
@@ -53,7 +53,7 @@ export function ModelLab({ v, gran, fmt, models, onPick, onAuto }: { v: View; gr
               </svg>
               <div className="mdesc">{m.desc}</div>
               <div className="params">{m.params}</div>
-              <div className="mstats"><div>MAE<b>{fmt(m.mae)}</b></div><div>RMSE<b>{fmt(m.rmse)}</b></div><div>WAPE<b>{metricPct(m.wape == null ? null : m.wape * 100)}</b></div><div>MAPE<b>{metricPct(m.mape)}</b></div><div>Bias<b>{bias}</b></div></div>
+              <div className="mstats"><div>Backtest accuracy<b>{metricPct(accOf(m))}</b></div><div>MAE<b>{fmt(m.mae)}</b></div><div>RMSE<b>{fmt(m.rmse)}</b></div><div>WAPE<b>{metricPct(m.wape == null ? null : m.wape * 100)}</b></div><div>MAPE<b>{metricPct(m.mape)}</b></div><div>Bias<b>{bias}</b></div></div>
             </button>
           );
         })}
